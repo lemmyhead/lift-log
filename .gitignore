@@ -1,0 +1,21 @@
+# Build output
+.gradle/
+.kotlin/
+build/
+
+# Machine-specific — points at ~/.liftlog-toolchain on this Mac
+local.properties
+
+# Local tool settings
+.claude/
+.toolchain/
+
+# IDE
+*.iml
+.idea/
+
+# macOS
+.DS_Store
+
+# Original brief, kept locally
+mob app prompt.rtf
