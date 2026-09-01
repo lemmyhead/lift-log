@@ -21,7 +21,7 @@ data class Exercise(
     val restTargetSeconds: Int
 )
 
-/** How a set functions in the ramp — drives which sets count as real training load. */
+/** How a set functions in the ramp — a label carried on each set and shown in the export. */
 object SetLabel {
     const val WARMUP = "warmup"
     const val WORKING = "working"
@@ -62,20 +62,8 @@ data class SetEntry(
     val done: Boolean get() = completedAt != null
     val started: Boolean get() = startedAt != null
 
-    /** Zero until the set is actually performed — a plan is not tonnage. */
+    /** Zero until the set is actually performed — a planned set has no volume yet. */
     val volume: Double get() = if (done) reps * weight else 0.0
-
-    val plannedVolume: Double get() = plannedReps * plannedWeight
-
-    /** Warm-ups build no meaningful fatigue, so they sit outside the working load. */
-    val isWarmup: Boolean get() = label.equals(SetLabel.WARMUP, ignoreCase = true)
-
-    /** True when the set was performed differently from how it was written. */
-    val deviated: Boolean get() = done && (reps != plannedReps || weight != plannedWeight)
-
-    /** Epley estimated one-rep max — the usual input to a periodisation plan. */
-    val estimated1rm: Double
-        get() = if (!done || reps <= 0 || weight <= 0.0) 0.0 else weight * (1.0 + reps / 30.0)
 }
 
 data class ExerciseWithSets(val exercise: Exercise, val sets: List<SetEntry>) {
@@ -85,15 +73,10 @@ data class ExerciseWithSets(val exercise: Exercise, val sets: List<SetEntry>) {
     /** The set the lifter is on: the first one not yet finished. */
     val nextUp: SetEntry? get() = sets.firstOrNull { !it.done }
 
-    val tonnage: Double get() = completed.sumOf { it.volume }
-    val workingTonnage: Double get() = completed.filterNot { it.isWarmup }.sumOf { it.volume }
     val totalReps: Int get() = completed.sumOf { it.reps }
-    val topSet: SetEntry? get() = completed.maxByOrNull { it.estimated1rm }
 }
 
 data class TrainingDetail(val training: Training, val exercises: List<ExerciseWithSets>) {
-    val tonnage: Double get() = exercises.sumOf { it.tonnage }
-    val workingTonnage: Double get() = exercises.sumOf { it.workingTonnage }
     val setCount: Int get() = exercises.sumOf { it.completed.size }
     val plannedRemaining: Int get() = exercises.sumOf { it.planned.size }
     val totalReps: Int get() = exercises.sumOf { it.totalReps }

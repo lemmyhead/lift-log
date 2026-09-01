@@ -40,9 +40,3 @@ fun plural(count: Int, singular: String, pluralForm: String = singular + "s"): S
 
 fun formatWeight(w: Double): String =
     if (w == w.roundToInt().toDouble()) "${w.roundToInt()}" else "%.1f".format(w)
-
-fun formatTonnage(kg: Double): String = when {
-    kg >= 10_000 -> "%.1ft".format(kg / 1000.0)
-    kg >= 1000 -> "%.2ft".format(kg / 1000.0)
-    else -> "${kg.roundToInt()} kg"
-}

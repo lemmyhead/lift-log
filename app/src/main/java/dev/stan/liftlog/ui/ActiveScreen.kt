@@ -46,7 +46,6 @@ import dev.stan.liftlog.data.ExerciseWithSets
 import dev.stan.liftlog.data.SetEntry
 import dev.stan.liftlog.data.formatClock
 import dev.stan.liftlog.data.formatShort
-import dev.stan.liftlog.data.formatTonnage
 import dev.stan.liftlog.data.formatWeight
 import dev.stan.liftlog.data.plural
 import dev.stan.liftlog.timer.Phase
@@ -74,8 +73,7 @@ fun ActiveScreen(onDone: () -> Unit) {
                         Text("Training", style = MaterialTheme.typography.titleMedium)
                         Text(
                             "${formatClock(session.trainingSeconds(now))} · " +
-                                "${plural(detail?.setCount ?: 0, "set")} · " +
-                                formatTonnage(detail?.tonnage ?: 0.0),
+                                "${plural(detail?.setCount ?: 0, "set")}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -333,7 +331,7 @@ private fun ExerciseCard(
             ) {
                 Text(item.exercise.name, style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "${item.completed.size}/${item.sets.size} · ${formatTonnage(item.tonnage)}",
+                    "${item.completed.size}/${item.sets.size} sets",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

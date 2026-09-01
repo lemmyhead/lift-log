@@ -13,7 +13,6 @@ import dev.stan.liftlog.timer.SessionManager
 sealed interface Screen {
     data object Home : Screen
     data object Active : Screen
-    data object Stats : Screen
     data class Detail(val trainingId: Long) : Screen
 }
 
@@ -34,11 +33,9 @@ fun AppRoot() {
     when (val s = screen) {
         Screen.Home -> HomeScreen(
             onStartOrResume = { screen = Screen.Active },
-            onOpenStats = { screen = Screen.Stats },
             onOpenTraining = { screen = Screen.Detail(it) }
         )
         Screen.Active -> ActiveScreen(onDone = { screen = Screen.Home })
-        Screen.Stats -> StatsScreen(onBack = { screen = Screen.Home })
         is Screen.Detail -> DetailScreen(trainingId = s.trainingId, onBack = { screen = Screen.Home })
     }
 }

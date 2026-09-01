@@ -14,7 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.InsertChart
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -34,11 +34,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.stan.liftlog.data.Export
 import dev.stan.liftlog.data.TrainingDetail
 import dev.stan.liftlog.data.formatClock
 import dev.stan.liftlog.data.formatDayTime
 import dev.stan.liftlog.data.formatShort
-import dev.stan.liftlog.data.formatTonnage
 import dev.stan.liftlog.data.plural
 import dev.stan.liftlog.timer.SessionManager
 
@@ -46,7 +46,6 @@ import dev.stan.liftlog.timer.SessionManager
 @Composable
 fun HomeScreen(
     onStartOrResume: () -> Unit,
-    onOpenStats: () -> Unit,
     onOpenTraining: (Long) -> Unit
 ) {
     val context = LocalContext.current
@@ -59,8 +58,11 @@ fun HomeScreen(
             TopAppBar(
                 title = { Text("Lift Log") },
                 actions = {
-                    IconButton(onClick = onOpenStats) {
-                        Icon(Icons.Default.InsertChart, contentDescription = "Load and fatigue")
+                    IconButton(
+                        onClick = { context.startActivity(Export.shareIntent(context, finished)) },
+                        enabled = finished.isNotEmpty()
+                    ) {
+                        Icon(Icons.Default.Share, contentDescription = "Export CSV")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -186,7 +188,6 @@ private fun TrainingRow(detail: TrainingDetail, onClick: () -> Unit) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Pill(plural(detail.setCount, "set"))
                 Pill(plural(detail.totalReps, "rep"))
-                Pill(formatTonnage(detail.tonnage))
                 Pill("rest ${formatShort(detail.avgRestSeconds)}")
             }
         }

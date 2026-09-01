@@ -46,8 +46,9 @@ the last one forward rather than stalling mid-session.
 After a set is done, tapping it edits what you *actually* did — the plan is kept alongside,
 so a missed rep is visible rather than silently overwritten.
 
-Marking sets **warmup** matters: warm-ups are excluded from the load ratio, since ramping
-to a heavy single is not the work that fatigues you.
+Each set carries a kind — **warmup**, **working**, **backoff** or **deload**. It is just a
+label: it is recorded against the set, shown in the log and written to the export, so a
+ramp still reads correctly months later.
 
 ## Rest alarm
 
@@ -72,19 +73,21 @@ Each set stores what was planned and what was done: weight, reps, RPE (optional)
 of set, its rest target, how long the set took, and the rest that followed it. Each session
 records its total duration.
 
-## Periodisation
+## Export
 
-The **Load & fatigue** screen (chart icon, top right) shows:
+**Export CSV** (share icon, top right) writes one row per completed set — 18 columns of
+exactly what you logged, with nothing computed or inferred:
 
-- **Weekly tonnage** — Σ reps × weight per week, 12 weeks back
-- **Load ratio** — this week's tonnage over your rolling 4-week weekly average
-  (acute:chronic workload ratio). 0.8–1.3 is steady progression, above 1.5 is the spike
-  that tends to precede a forced rest, below 0.8 is a deliberate deload.
-- **Estimated 1RM per movement** — Epley (`weight × (1 + reps/30)`) on your top set each
-  session, with the change against the session before.
+```
+session_id, session_start, session_end, session_duration_s,
+exercise_order, exercise, set_number, label,
+planned_reps, planned_weight_kg, reps, weight_kg,
+rpe, volume_kg, rest_target_s, work_s, rest_s, completed_at
+```
 
-**Export CSV** (share icon) gives one row per set with every field, for doing your own
-periodisation analysis in a spreadsheet.
+Both the plan and the performance are there, so a set that did not go as written is visible
+rather than averaged away. The file goes out through Android's share sheet — Drive, email,
+or straight into a spreadsheet.
 
 ## Install
 

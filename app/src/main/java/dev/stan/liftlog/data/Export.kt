@@ -10,8 +10,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 /**
- * One row per set, flat enough to drop straight into a spreadsheet and run a
- * periodisation analysis over.
+ * One row per set, flat enough to drop straight into a spreadsheet.
  */
 object Export {
 
@@ -33,7 +32,7 @@ object Export {
                 "session_id", "session_start", "session_end", "session_duration_s",
                 "exercise_order", "exercise", "set_number", "label",
                 "planned_reps", "planned_weight_kg", "reps", "weight_kg",
-                "rpe", "est_1rm_kg", "volume_kg", "rest_target_s", "work_s", "rest_s",
+                "rpe", "volume_kg", "rest_target_s", "work_s", "rest_s",
                 "completed_at"
             ).joinToString(",")
         )
@@ -55,7 +54,6 @@ object Export {
                             s.reps.toString(),
                             formatWeight(s.weight),
                             s.rpe?.let { formatWeight(it) } ?: "",
-                            "%.1f".format(s.estimated1rm),
                             formatWeight(s.volume),
                             s.restTargetSeconds.toString(),
                             s.workSeconds.toString(),

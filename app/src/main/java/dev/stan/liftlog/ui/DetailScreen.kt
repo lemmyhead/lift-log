@@ -3,7 +3,9 @@ package dev.stan.liftlog.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -38,12 +40,9 @@ import dev.stan.liftlog.data.SetEntry
 import dev.stan.liftlog.data.formatClock
 import dev.stan.liftlog.data.formatDayTime
 import dev.stan.liftlog.data.formatShort
-import dev.stan.liftlog.data.formatTonnage
-import dev.stan.liftlog.data.formatWeight
 import dev.stan.liftlog.data.plural
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -98,10 +97,13 @@ fun DetailScreen(trainingId: Long, onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             item {
-                Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    StatTile("Duration", formatClock(d.training.durationSeconds), modifier = Modifier.weight(1f))
-                    StatTile("Tonnage", formatTonnage(d.tonnage), plural(d.totalReps, "rep"), modifier = Modifier.weight(1f))
-                    StatTile("Avg rest", formatShort(d.avgRestSeconds), plural(d.setCount, "set"), modifier = Modifier.weight(1f))
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 8.dp).height(IntrinsicSize.Min),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    StatTile("Duration", formatClock(d.training.durationSeconds), modifier = Modifier.weight(1f).fillMaxHeight())
+                    StatTile("Reps", d.totalReps.toString(), plural(d.setCount, "set"), modifier = Modifier.weight(1f).fillMaxHeight())
+                    StatTile("Avg rest", formatShort(d.avgRestSeconds), modifier = Modifier.weight(1f).fillMaxHeight())
                 }
             }
 
@@ -112,24 +114,10 @@ fun DetailScreen(trainingId: Long, onBack: () -> Unit) {
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                     ) {
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Row(
-                                Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(ex.exercise.name, style = MaterialTheme.typography.titleMedium)
-                                ex.topSet?.let {
-                                    Text(
-                                        "e1RM ${it.estimated1rm.roundToInt()} kg",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.primary
-                                    )
-                                }
-                            }
+                            Text(ex.exercise.name, style = MaterialTheme.typography.titleMedium)
                             ex.completed.forEach { set -> SetRow(set) { editing = set } }
                             Text(
-                                "${plural(ex.totalReps, "rep")} · ${formatTonnage(ex.tonnage)}" +
-                                    (ex.topSet?.let { " · top ${formatWeight(it.weight)} kg × ${it.reps}" } ?: ""),
+                                plural(ex.totalReps, "rep"),
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
