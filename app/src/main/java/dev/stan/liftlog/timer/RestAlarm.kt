@@ -10,10 +10,8 @@ import android.content.Intent
 import android.media.AudioAttributes
 import android.media.RingtoneManager
 import android.os.Build
-import android.os.VibrationEffect
-import android.os.Vibrator
-import android.os.VibratorManager
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import dev.stan.liftlog.MainActivity
 import dev.stan.liftlog.R
 import dev.stan.liftlog.data.formatClock
@@ -32,6 +30,8 @@ object RestAlarm {
     const val EXTRA_REST_STARTED_AT = "rest_started_at"
     const val EXTRA_TARGET_SECONDS = "target_seconds"
     const val EXTRA_EXERCISE = "exercise"
+    const val EXTRA_SET_POSITION = "set_position"
+    const val EXTRA_SET_CORE = "set_core"
 
     const val CHANNEL_ID = "rest_done"
     private const val NOTIFICATION_ID = 1002
@@ -44,13 +44,17 @@ object RestAlarm {
         context: Context,
         restStartedAt: Long,
         targetSeconds: Int,
-        exercise: String
+        exercise: String,
+        setPosition: Int = 0,
+        setCore: String = ""
     ): PendingIntent {
         val intent = Intent(context.applicationContext, RestAlarmReceiver::class.java)
             .setAction(ACTION_FIRE)
             .putExtra(EXTRA_REST_STARTED_AT, restStartedAt)
             .putExtra(EXTRA_TARGET_SECONDS, targetSeconds)
             .putExtra(EXTRA_EXERCISE, exercise)
+            .putExtra(EXTRA_SET_POSITION, setPosition)
+            .putExtra(EXTRA_SET_CORE, setCore)
         return PendingIntent.getBroadcast(
             context.applicationContext, REQUEST_CODE, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -61,13 +65,21 @@ object RestAlarm {
     fun canFireExactly(context: Context): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarms(context).canScheduleExactAlarms()
 
-    fun schedule(context: Context, restStartedAt: Long, targetSeconds: Int, exercise: String) {
+    /**
+     * The alert has to name the set that is coming up, and it may be built in a process
+     * that has just been spawned to receive the broadcast — so the details ride along in
+     * the intent rather than being read back from the database.
+     */
+    fun schedule(context: Context, restStartedAt: Long, targetSeconds: Int, state: SessionState) {
         cancel(context)
         if (targetSeconds <= 0) return
 
         val app = context.applicationContext
         val triggerAt = restStartedAt + targetSeconds * 1000L
-        val pending = pendingIntent(app, restStartedAt, targetSeconds, exercise)
+        val pending = pendingIntent(
+            app, restStartedAt, targetSeconds,
+            state.currentExercise, state.currentSetPosition, state.currentSetCore
+        )
 
         runCatching {
             if (canFireExactly(app)) {
@@ -115,7 +127,15 @@ object RestAlarm {
         notifications(context).createNotificationChannel(channel)
     }
 
-    fun alert(context: Context, targetSeconds: Int, exercise: String) {
+    private fun action(context: Context, action: String, requestCode: Int): PendingIntent {
+        val intent = Intent(context.applicationContext, SessionService::class.java).setAction(action)
+        return PendingIntent.getService(
+            context.applicationContext, requestCode, intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+    }
+
+    fun alert(context: Context, targetSeconds: Int, exercise: String, setPosition: Int, setCore: String) {
         createChannel(context)
 
         val open = PendingIntent.getActivity(
@@ -125,34 +145,32 @@ object RestAlarm {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val movement = exercise.ifBlank { "Next set" }
+        // "Next:" is a promise about a specific set, so it is only made when there is a
+        // load to name; with the ramp exhausted the alert falls back to a plain prompt.
+        val body = if (setCore.isBlank()) "Back under the bar" else "Next: " + listOfNotNull(
+            exercise.ifBlank { null },
+            setPosition.takeIf { it > 0 }?.let { "set $it" },
+            setCore
+        ).joinToString(" · ")
+
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_session)
-            .setContentTitle("Rest is up — ${formatClock(targetSeconds)}")
-            .setContentText("$movement · back under the bar")
+            .setSubText("Rest complete")
+            .setContentTitle("${formatClock(targetSeconds)} rest is up")
+            .setContentText(body)
+            .setColor(ContextCompat.getColor(context, R.color.notification_accent))
+            .setWhen(System.currentTimeMillis())
+            .setShowWhen(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setCategory(NotificationCompat.CATEGORY_ALARM)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(true)
             .setContentIntent(open)
+            .addAction(0, "Start set", action(context, SessionService.ACTION_START_SET, 3))
+            .addAction(0, "+1:00", action(context, SessionService.ACTION_EXTEND_REST, 4))
             .build()
 
         notifications(context).notify(NOTIFICATION_ID, notification)
-        buzz(context)
-    }
-
-    private fun buzz(context: Context) {
-        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            (context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as? VibratorManager)?.defaultVibrator
-        } else {
-            @Suppress("DEPRECATION")
-            context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
-        }
-        runCatching {
-            vibrator?.vibrate(
-                VibrationEffect.createWaveform(longArrayOf(0, 400, 250, 400), -1)
-            )
-        }
     }
 }
 
@@ -164,13 +182,15 @@ class RestAlarmReceiver : BroadcastReceiver() {
         val scheduledFor = intent.getLongExtra(RestAlarm.EXTRA_REST_STARTED_AT, 0L)
         val target = intent.getIntExtra(RestAlarm.EXTRA_TARGET_SECONDS, 0)
         val exercise = intent.getStringExtra(RestAlarm.EXTRA_EXERCISE).orEmpty()
+        val setPosition = intent.getIntExtra(RestAlarm.EXTRA_SET_POSITION, 0)
+        val setCore = intent.getStringExtra(RestAlarm.EXTRA_SET_CORE).orEmpty()
 
         // A rest that was already ended must not still ring. Checked against the persisted
         // stamp rather than in-memory state, because this can run in a fresh process.
         val current = SessionManager.persistedRestStartedAt(context)
         if (scheduledFor != 0L && current != scheduledFor) return
 
-        RestAlarm.alert(context, target, exercise)
+        RestAlarm.alert(context, target, exercise, setPosition, setCore)
         SessionManager.markRestTargetReached(context)
     }
 }

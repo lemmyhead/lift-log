@@ -63,6 +63,14 @@ mechanism that reliably fires while the phone is idle in a bag. The `USE_EXACT_A
 permission it relies on is granted automatically on Android 13+, so there is nothing to
 enable. Ending a rest early, or finishing the session, cancels the pending alarm.
 
+The alert names the set you are going back to — `Next: Squat · set 3 · 160 kg × 5` — and
+carries two buttons, so the phone still does not have to be unlocked:
+
+| Button | What happens |
+|---|---|
+| **Start set** | Closes the rest and begins the next planned set |
+| **+1:00** | Another minute, counted from now. A one-off — the set's planned rest target is left alone |
+
 ## Structure
 
 ```

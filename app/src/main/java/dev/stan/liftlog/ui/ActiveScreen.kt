@@ -47,6 +47,7 @@ import dev.stan.liftlog.data.SetEntry
 import dev.stan.liftlog.data.formatClock
 import dev.stan.liftlog.data.formatShort
 import dev.stan.liftlog.data.formatWeight
+import dev.stan.liftlog.data.numberOfSet
 import dev.stan.liftlog.data.plural
 import dev.stan.liftlog.timer.Phase
 import dev.stan.liftlog.timer.SessionManager
@@ -171,7 +172,7 @@ fun ActiveScreen(onDone: () -> Unit) {
 
     editingPlan?.let { set ->
         PlannedSetDialog(
-            title = "Set ${set.position + 1}",
+            title = "Set ${detail.numberOfSet(set)}",
             exerciseName = session.currentExercise,
             initialReps = set.plannedReps,
             initialWeight = set.plannedWeight,
@@ -192,6 +193,7 @@ fun ActiveScreen(onDone: () -> Unit) {
     editingActuals?.let { set ->
         EditSetDialog(
             set = set,
+            number = detail.numberOfSet(set),
             onDismiss = { editingActuals = null },
             onSave = { reps, weight, rpe ->
                 editingActuals = null
@@ -345,9 +347,10 @@ private fun ExerciseCard(
                 )
             }
 
-            item.sets.forEach { set ->
+            item.sets.forEachIndexed { index, set ->
                 SetRow(
                     set = set,
+                    number = index + 1,
                     isCurrent = set.id == currentSetId,
                     isNext = set.id == item.nextUp?.id,
                     onClick = { if (set.done) onEditActuals(set) else onEditPlan(set) }
@@ -364,6 +367,7 @@ private fun ExerciseCard(
 @Composable
 fun SetRow(
     set: SetEntry,
+    number: Int,
     isCurrent: Boolean = false,
     isNext: Boolean = false,
     onClick: (() -> Unit)? = null
@@ -388,7 +392,7 @@ fun SetRow(
         verticalAlignment = Alignment.CenterVertically
     ) {
         Text(
-            "${set.position + 1}",
+            "$number",
             style = NumberStyle,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(end = 12.dp)

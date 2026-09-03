@@ -83,6 +83,7 @@ object SessionManager {
             .getOrDefault(Phase.READY)
         val currentSetId = p.getLong(K_CURRENT_SET, -1L)
         val currentSet = currentSetId.takeIf { it > 0 }?.let { Repo.set(it) }
+        val named = notifiedSet(training.id, phase, currentSetId)
 
         _state.value = SessionState(
             trainingId = training.id,
@@ -93,6 +94,8 @@ object SessionManager {
             currentSetId = currentSetId,
             currentExercise = Repo.lastExerciseOf(training.id)?.name.orEmpty(),
             currentSetLabel = currentSet?.let { describe(it) }.orEmpty(),
+            currentSetPosition = named?.let { setNumber(it.exerciseId, it.id) } ?: 0,
+            currentSetCore = named?.let { describeCore(it) }.orEmpty(),
             setsThisSession = Repo.detail(training.id)?.setCount ?: 0,
             restTargetSeconds = currentSet?.restTargetSeconds ?: 0
         )
@@ -143,6 +146,51 @@ object SessionManager {
         }
     }
 
+    /**
+     * The rest alarm's primary button: close the rest and go straight under the bar.
+     *
+     * Two beats in one press, because when the alarm sounds the lifter is standing at the
+     * bar — being handed "end rest" and then having to find "start set" is a press too many.
+     */
+    fun startNextSet(context: Context) = scope.launch {
+        val s = _state.value
+        if (!s.active) return@launch
+        when (s.phase) {
+            Phase.REST -> {
+                endRest(context, s)
+                // endRest has replaced the state; beginSet must see the new one.
+                beginSet(context, _state.value)
+            }
+            Phase.READY -> beginSet(context, s)
+            // Racked but never started resting: closing the gap is the sensible read.
+            Phase.RACKED -> beginSet(context, s)
+            Phase.SET -> Unit
+        }
+    }
+
+    /**
+     * The alarm's "+1:00": a one-off snooze.
+     *
+     * Deliberately does not touch the set's stored rest target or the default for future
+     * sets — needing another minute today is not a change to the plan.
+     */
+    fun extendRest(context: Context, extraSeconds: Int = 60) = scope.launch {
+        val s = _state.value
+        if (!s.active || s.phase != Phase.REST) return@launch
+        // Measured from whichever is later, the target or where the rest actually stands:
+        // an alert left ringing for two minutes must still buy a full extra minute, and
+        // target + 60 would already be in the past and re-fire on the spot.
+        val elapsed = s.phaseSeconds(System.currentTimeMillis())
+        val target = maxOf(s.restTargetSeconds, elapsed) + extraSeconds
+        val extended = s.copy(restTargetSeconds = target, restTargetReached = false)
+        _state.value = extended
+        persist(context)
+        // Rescheduled against the unchanged rest start, so the clock on screen keeps
+        // running unbroken. schedule() cancels first, clearing the alert that prompted this.
+        RestAlarm.schedule(context, s.phaseStartedAt, target, extended)
+        startService(context)
+    }
+
     private fun beginSet(context: Context, s: SessionState) {
         val now = System.currentTimeMillis()
 
@@ -178,6 +226,8 @@ object SessionManager {
             currentSetId = target.id,
             currentExercise = exercise.name,
             currentSetLabel = describe(target),
+            currentSetPosition = setNumber(exercise.id, target.id),
+            currentSetCore = describeCore(target),
             restTargetSeconds = target.restTargetSeconds,
             restTargetReached = false
         )
@@ -189,10 +239,15 @@ object SessionManager {
     private fun endSet(context: Context, s: SessionState) {
         val now = System.currentTimeMillis()
         closeSet(s, now)
+        // The set is logged, so the two notification surfaces stop naming it and start
+        // naming what to come back to.
+        val named = notifiedSet(s.trainingId, Phase.RACKED, s.currentSetId)
         _state.value = s.copy(
             phase = Phase.RACKED,
             phaseStartedAt = now,
             setEndedAt = now,
+            currentSetPosition = named?.let { setNumber(it.exerciseId, it.id) } ?: 0,
+            currentSetCore = named?.let { describeCore(it) }.orEmpty(),
             setsThisSession = Repo.detail(s.trainingId)?.setCount ?: (s.setsThisSession + 1)
         )
         persist(context)
@@ -208,7 +263,7 @@ object SessionManager {
             restTargetReached = false
         )
         persist(context)
-        RestAlarm.schedule(context, now, s.restTargetSeconds, s.currentExercise)
+        RestAlarm.schedule(context, now, s.restTargetSeconds, _state.value)
         buzz(context, 40)
         startService(context)
     }
@@ -282,7 +337,7 @@ object SessionManager {
         if (s.currentSetId == setId) {
             _state.value = s.copy(restTargetSeconds = restTargetSeconds, restTargetReached = false)
             if (s.phase == Phase.REST) {
-                RestAlarm.schedule(context, s.phaseStartedAt, restTargetSeconds, s.currentExercise)
+                RestAlarm.schedule(context, s.phaseStartedAt, restTargetSeconds, _state.value)
             }
         }
         refreshCurrentSet(context)
@@ -313,9 +368,12 @@ object SessionManager {
             Phase.READY -> exercise?.let { Repo.nextPlannedSet(it.id) }
             else -> s.currentSetId.takeIf { it > 0 }?.let { Repo.set(it) }
         }
+        val named = notifiedSet(s.trainingId, s.phase, s.currentSetId)
         _state.value = s.copy(
             currentExercise = exercise?.name.orEmpty(),
             currentSetLabel = shown?.let { describe(it) }.orEmpty(),
+            currentSetPosition = named?.let { setNumber(it.exerciseId, it.id) } ?: 0,
+            currentSetCore = named?.let { describeCore(it) }.orEmpty(),
             restTargetSeconds = when (s.phase) {
                 Phase.READY -> shown?.restTargetSeconds ?: s.restTargetSeconds
                 else -> s.restTargetSeconds
@@ -336,9 +394,35 @@ object SessionManager {
     // ------------------------------------------------------------------- internals
 
     private fun describe(set: SetEntry): String {
-        val core = "${formatWeight(set.weight)} kg × ${set.reps}"
+        val core = describeCore(set)
         return if (set.label.isBlank()) core else "$core · ${set.label}"
     }
+
+    /** The load alone, for the notifications — they carry the set number instead of the ramp label. */
+    private fun describeCore(set: SetEntry): String = "${formatWeight(set.weight)} kg × ${set.reps}"
+
+    /**
+     * Which set of the ramp this is, counting from 1.
+     *
+     * Derived by index rather than from [SetEntry.position], because deleting a set leaves a
+     * gap in the stored positions — after removing the second of five, `position + 1` would
+     * start counting 1, 3, 4, 5.
+     */
+    private fun setNumber(exerciseId: Long, setId: Long): Int =
+        Repo.setsOf(exerciseId).indexOfFirst { it.id == setId } + 1
+
+    /**
+     * The set the notifications should name.
+     *
+     * While a set is in hand that is the set itself. Once it is racked the lock screen's job
+     * is to say what to load next — which is exactly what the alarm's "Next:" line promises —
+     * so from [Phase.RACKED] onwards this resolves to the next planned set rather than the
+     * one just finished. Safe to call after [closeSet], which is what takes the finished set
+     * out of [Repo.nextPlannedSet]'s reach.
+     */
+    private fun notifiedSet(trainingId: Long, phase: Phase, currentSetId: Long): SetEntry? =
+        if (phase == Phase.SET) currentSetId.takeIf { it > 0 }?.let { Repo.set(it) }
+        else Repo.lastExerciseOf(trainingId)?.let { Repo.nextPlannedSet(it.id) }
 
     private fun persist(context: Context) {
         val s = _state.value

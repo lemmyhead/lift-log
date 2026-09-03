@@ -157,6 +157,7 @@ fun PlannedSetDialog(
 @Composable
 fun EditSetDialog(
     set: SetEntry,
+    number: Int,
     onDismiss: () -> Unit,
     onSave: (Int, Double, Double?) -> Unit,
     onDelete: () -> Unit
@@ -167,7 +168,7 @@ fun EditSetDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Set ${set.position + 1} — what you did") },
+        title = { Text("Set $number — what you did") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(

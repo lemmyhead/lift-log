@@ -56,6 +56,10 @@ data class SessionState(
     val currentExercise: String = "",
     /** Human description of the set in hand, e.g. "160 kg × 5". */
     val currentSetLabel: String = "",
+    /** 1-based position of the set in hand within its exercise; 0 when unknown. */
+    val currentSetPosition: Int = 0,
+    /** The set in hand as bare load, e.g. "160 kg × 5" — no ramp label. */
+    val currentSetCore: String = "",
     val setsThisSession: Int = 0,
     /** Rest target of the set in hand; 0 disables the alarm. */
     val restTargetSeconds: Int = 0,

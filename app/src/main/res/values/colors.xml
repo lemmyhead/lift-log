@@ -1,3 +1,5 @@
 <resources>
     <color name="ic_launcher_background">#12161C</color>
+    <!-- Accent for both notification surfaces; shared so they cannot drift apart. -->
+    <color name="notification_accent">#D8FF3F</color>
 </resources>

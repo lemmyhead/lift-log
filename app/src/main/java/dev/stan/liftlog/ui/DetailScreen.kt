@@ -40,6 +40,8 @@ import dev.stan.liftlog.data.SetEntry
 import dev.stan.liftlog.data.formatClock
 import dev.stan.liftlog.data.formatDayTime
 import dev.stan.liftlog.data.formatShort
+import dev.stan.liftlog.data.numberOf
+import dev.stan.liftlog.data.numberOfSet
 import dev.stan.liftlog.data.plural
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -115,7 +117,9 @@ fun DetailScreen(trainingId: Long, onBack: () -> Unit) {
                     ) {
                         Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text(ex.exercise.name, style = MaterialTheme.typography.titleMedium)
-                            ex.completed.forEach { set -> SetRow(set) { editing = set } }
+                            ex.completed.forEach { set ->
+                                SetRow(set, ex.sets.numberOf(set)) { editing = set }
+                            }
                             Text(
                                 plural(ex.totalReps, "rep"),
                                 style = MaterialTheme.typography.labelMedium,
@@ -146,6 +150,7 @@ fun DetailScreen(trainingId: Long, onBack: () -> Unit) {
     editing?.let { set ->
         EditSetDialog(
             set = set,
+            number = detail.numberOfSet(set),
             onDismiss = { editing = null },
             onSave = { reps, weight, rpe ->
                 editing = null

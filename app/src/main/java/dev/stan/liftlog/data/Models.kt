@@ -66,6 +66,19 @@ data class SetEntry(
     val volume: Double get() = if (done) reps * weight else 0.0
 }
 
+/**
+ * 1-based number of a set within its exercise's ramp; 0 when it is not in the list.
+ *
+ * Counted by index rather than read from [SetEntry.position], because deleting a set leaves
+ * a gap in the stored positions — after removing the second of five, `position + 1` would
+ * number the remaining four 1, 3, 4, 5.
+ */
+fun List<SetEntry>.numberOf(set: SetEntry): Int = indexOfFirst { it.id == set.id } + 1
+
+/** The set's number within its own exercise, wherever only the session is in hand. */
+fun TrainingDetail?.numberOfSet(set: SetEntry): Int =
+    this?.exercises?.firstOrNull { it.exercise.id == set.exerciseId }?.sets?.numberOf(set) ?: 0
+
 data class ExerciseWithSets(val exercise: Exercise, val sets: List<SetEntry>) {
     val completed: List<SetEntry> get() = sets.filter { it.done }
     val planned: List<SetEntry> get() = sets.filter { !it.done }
