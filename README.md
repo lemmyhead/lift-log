@@ -156,6 +156,22 @@ self-contained — nothing was installed into system directories.
 
 ## Data
 
-Everything is local: a SQLite database in the app's private storage. No network
-permission is declared, so the log cannot leave the phone except through the CSV export
-you trigger yourself.
+The log is a single SQLite database in the app's private storage. No network permission is
+declared, so the app itself never talks to anything — there is no account, no sync and no
+telemetry.
+
+It does opt that database into Android's own backup, though, and deliberately so: the
+training log is the only copy of your history, and a phone that goes in a river should not
+take a year of squats with it. Both rule files name it explicitly —
+`res/xml/backup_rules.xml` for Android 11 and below, `res/xml/data_extraction_rules.xml`
+for Android 12+:
+
+| Path | What it covers |
+|---|---|
+| Cloud backup | Android uploads `liftlog.db` to the Google account on the phone, whenever the phone's own backup is switched on under `Settings > Google > Backup`. Reinstalling on a new handset restores the log with the app |
+| Device transfer | The database comes across during a phone-to-phone migration |
+
+**So the log can leave the phone — through Google's backup, not through the app.** If you
+want it confined to the handset, set `android:allowBackup="false"` in
+`app/src/main/AndroidManifest.xml` and rebuild, or turn the phone's backup off system-wide.
+Either way the CSV export stays the only route the app itself offers.
