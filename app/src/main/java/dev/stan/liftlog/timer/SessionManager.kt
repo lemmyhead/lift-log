@@ -84,6 +84,10 @@ object SessionManager {
         val currentSetId = p.getLong(K_CURRENT_SET, -1L)
         val currentSet = currentSetId.takeIf { it > 0 }?.let { Repo.set(it) }
         val named = notifiedSet(training.id, phase, currentSetId)
+        // With no set in hand the card previews what is next, which is what
+        // refreshCurrentSet shows too — so reopening the app and editing the plan agree.
+        val shown = if (phase == Phase.READY) named else currentSet
+        val setCount = Repo.detail(training.id)?.setCount ?: 0
 
         _state.value = SessionState(
             trainingId = training.id,
@@ -92,12 +96,13 @@ object SessionManager {
             phaseStartedAt = p.getLong(K_PHASE_AT, training.startedAt),
             setEndedAt = p.getLong(K_SET_ENDED, 0L),
             currentSetId = currentSetId,
-            currentExercise = Repo.lastExerciseOf(training.id)?.name.orEmpty(),
-            currentSetLabel = currentSet?.let { describe(it) }.orEmpty(),
+            currentExercise = exerciseNameFor(training.id, currentSet ?: named),
+            currentSetLabel = shown?.let { describe(it) }.orEmpty(),
             currentSetPosition = named?.let { setNumber(it.exerciseId, it.id) } ?: 0,
             currentSetCore = named?.let { describeCore(it) }.orEmpty(),
-            setsThisSession = Repo.detail(training.id)?.setCount ?: 0,
-            restTargetSeconds = currentSet?.restTargetSeconds ?: 0
+            setsThisSession = setCount,
+            restTargetSeconds = shown?.restTargetSeconds ?: 0,
+            planComplete = named == null && setCount > 0
         )
     }
 
@@ -200,23 +205,13 @@ object SessionManager {
             Repo.updateRest(s.currentSetId, ((now - s.setEndedAt) / 1000).toInt().coerceAtLeast(0))
         }
 
-        val exercise = Repo.lastExerciseOf(s.trainingId)
-            ?: Repo.exercise(Repo.addExercise(s.trainingId, "Exercise 1", defaultRestTarget(context)))
+        // The set is chosen first and the movement read off it, not the other way round:
+        // what comes next is a property of the plan, not of whichever exercise happened to
+        // be added last. A null here means the plan is finished, and beginSet doing nothing
+        // is what lets every caller stay guard-free.
+        val target = Repo.nextPlannedSetInTraining(s.trainingId)
+            ?: openingSet(context, s.trainingId, now)
             ?: return
-
-        val target = Repo.nextPlannedSet(exercise.id) ?: run {
-            // Nothing planned left — carry the last set forward so the session never stalls.
-            val previous = Repo.lastSetOf(exercise.id)
-            val id = Repo.planSet(
-                exerciseId = exercise.id,
-                reps = previous?.reps ?: FALLBACK_REPS,
-                weight = previous?.weight ?: 0.0,
-                restTargetSeconds = previous?.restTargetSeconds ?: exercise.restTargetSeconds,
-                label = previous?.label.orEmpty(),
-                now = now
-            )
-            Repo.set(id) ?: return
-        }
 
         Repo.markSetStarted(target.id, now)
         _state.value = s.copy(
@@ -224,16 +219,35 @@ object SessionManager {
             phaseStartedAt = now,
             setEndedAt = 0L,
             currentSetId = target.id,
-            currentExercise = exercise.name,
+            currentExercise = exerciseNameFor(s.trainingId, target),
             currentSetLabel = describe(target),
-            currentSetPosition = setNumber(exercise.id, target.id),
+            currentSetPosition = setNumber(target.exerciseId, target.id),
             currentSetCore = describeCore(target),
             restTargetSeconds = target.restTargetSeconds,
-            restTargetReached = false
+            restTargetReached = false,
+            planComplete = false
         )
         persist(context)
         buzz(context, 40)
         startService(context)
+    }
+
+    /**
+     * A session that was started but never planned still has to go somewhere when the
+     * button is pressed, so the first exercise and set are invented as they always were.
+     *
+     * Any set at all — planned or performed — means the plan was written and, since nothing
+     * is pending, finished. Then this returns null and both surfaces offer "End training"
+     * rather than quietly appending a set nobody asked for.
+     */
+    private fun openingSet(context: Context, trainingId: Long, now: Long): SetEntry? {
+        val plan = Repo.detail(trainingId) ?: return null
+        if (plan.exercises.any { it.sets.isNotEmpty() }) return null
+        val exercise = plan.exercises.firstOrNull()?.exercise
+            ?: Repo.exercise(Repo.addExercise(trainingId, "Exercise 1", defaultRestTarget(context)))
+            ?: return null
+        val id = Repo.planSet(exercise.id, FALLBACK_REPS, 0.0, exercise.restTargetSeconds, "", now)
+        return Repo.set(id)
     }
 
     private fun endSet(context: Context, s: SessionState) {
@@ -242,13 +256,18 @@ object SessionManager {
         // The set is logged, so the two notification surfaces stop naming it and start
         // naming what to come back to.
         val named = notifiedSet(s.trainingId, Phase.RACKED, s.currentSetId)
+        val setCount = Repo.detail(s.trainingId)?.setCount ?: (s.setsThisSession + 1)
         _state.value = s.copy(
             phase = Phase.RACKED,
             phaseStartedAt = now,
             setEndedAt = now,
+            // The name moves with the number and the load: at an exercise boundary the
+            // alarm ships all three as one sentence, so they cannot come from two sets.
+            currentExercise = exerciseNameFor(s.trainingId, named),
             currentSetPosition = named?.let { setNumber(it.exerciseId, it.id) } ?: 0,
             currentSetCore = named?.let { describeCore(it) }.orEmpty(),
-            setsThisSession = Repo.detail(s.trainingId)?.setCount ?: (s.setsThisSession + 1)
+            setsThisSession = setCount,
+            planComplete = named == null && setCount > 0
         )
         persist(context)
         buzz(context, 40)
@@ -280,7 +299,10 @@ object SessionManager {
         )
         persist(context)
         buzz(context, 40)
-        startService(context)
+        // Back to READY means nothing is in hand, so what is displayed becomes a preview of
+        // what is next — or of nothing, once the plan is done. This is the same resolution
+        // restore does, so the three ways into READY agree.
+        refreshCurrentSet(context)
     }
 
     private fun closeSet(s: SessionState, now: Long) {
@@ -302,11 +324,9 @@ object SessionManager {
         val now = System.currentTimeMillis()
         val id = Repo.addExercise(s.trainingId, name, defaultRestTarget(context))
         if (copyLastPlan) Repo.copyPlanFromLastSession(id, name, now)
-        _state.value = _state.value.copy(
-            currentExercise = name,
-            currentSetLabel = Repo.nextPlannedSet(id)?.let { describe(it) }.orEmpty()
-        )
-        startService(context)
+        // Adding a movement appends to the plan; it does not repoint the session at it.
+        // What is displayed follows plan order, so it only moves here if this really is next.
+        refreshCurrentSet(context)
     }
 
     fun planSet(
@@ -363,14 +383,16 @@ object SessionManager {
     private fun refreshCurrentSet(context: Context) {
         val s = _state.value
         if (!s.active) return
-        val exercise = Repo.lastExerciseOf(s.trainingId)
-        val shown = when (s.phase) {
-            Phase.READY -> exercise?.let { Repo.nextPlannedSet(it.id) }
-            else -> s.currentSetId.takeIf { it > 0 }?.let { Repo.set(it) }
-        }
         val named = notifiedSet(s.trainingId, s.phase, s.currentSetId)
+        // In READY the two agree — what is shown is what is next. From RACKED on they part
+        // company on purpose: the card keeps naming the set just finished while the
+        // notification names the one to load.
+        val shown =
+            if (s.phase == Phase.READY) named
+            else s.currentSetId.takeIf { it > 0 }?.let { Repo.set(it) }
+        val setCount = Repo.detail(s.trainingId)?.setCount ?: s.setsThisSession
         _state.value = s.copy(
-            currentExercise = exercise?.name.orEmpty(),
+            currentExercise = exerciseNameFor(s.trainingId, named),
             currentSetLabel = shown?.let { describe(it) }.orEmpty(),
             currentSetPosition = named?.let { setNumber(it.exerciseId, it.id) } ?: 0,
             currentSetCore = named?.let { describeCore(it) }.orEmpty(),
@@ -378,7 +400,8 @@ object SessionManager {
                 Phase.READY -> shown?.restTargetSeconds ?: s.restTargetSeconds
                 else -> s.restTargetSeconds
             },
-            setsThisSession = Repo.detail(s.trainingId)?.setCount ?: s.setsThisSession
+            setsThisSession = setCount,
+            planComplete = named == null && setCount > 0
         )
         startService(context)
     }
@@ -418,11 +441,28 @@ object SessionManager {
      * is to say what to load next — which is exactly what the alarm's "Next:" line promises —
      * so from [Phase.RACKED] onwards this resolves to the next planned set rather than the
      * one just finished. Safe to call after [closeSet], which is what takes the finished set
-     * out of [Repo.nextPlannedSet]'s reach.
+     * out of [Repo.nextPlannedSetInTraining]'s reach — a set still in progress is unfinished
+     * too, so that ordering is what keeps the two apart. Null once the plan is done.
      */
     private fun notifiedSet(trainingId: Long, phase: Phase, currentSetId: Long): SetEntry? =
         if (phase == Phase.SET) currentSetId.takeIf { it > 0 }?.let { Repo.set(it) }
-        else Repo.lastExerciseOf(trainingId)?.let { Repo.nextPlannedSet(it.id) }
+        else Repo.nextPlannedSetInTraining(trainingId)
+
+    /**
+     * The movement to name, derived from whichever set is being named — so a header can
+     * never announce one exercise above another exercise's load. It matters most for the
+     * alarm, which ships [SessionState.currentExercise], [SessionState.currentSetPosition]
+     * and [SessionState.currentSetCore] as a single sentence.
+     *
+     * With no set to name — plan finished, or nothing planned yet — it falls back to the
+     * exercise of the last set actually performed, which is the movement the lifter is
+     * demonstrably still on, and finally to the top of the plan.
+     */
+    private fun exerciseNameFor(trainingId: Long, set: SetEntry?): String =
+        (set?.let { Repo.exercise(it.exerciseId) }
+            ?: Repo.latestSetInTraining(trainingId)?.let { Repo.exercise(it.exerciseId) }
+            ?: Repo.exercisesOf(trainingId).firstOrNull())
+            ?.name.orEmpty()
 
     private fun persist(context: Context) {
         val s = _state.value

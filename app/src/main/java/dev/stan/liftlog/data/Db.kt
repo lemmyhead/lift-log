@@ -368,11 +368,29 @@ object Repo {
         db.rawQuery("SELECT $SET_COLS FROM set_entry WHERE id = ?", arrayOf(id.toString()))
             .use { if (it.moveToFirst()) it.toSet() else null }
 
-    /** The next set to perform in this exercise: first one not yet finished. */
-    fun nextPlannedSet(exerciseId: Long): SetEntry? =
+    /**
+     * The next set to perform anywhere in this training: the first unfinished set in plan
+     * order — exercises by their position, then sets by theirs.
+     *
+     * Training-wide rather than per-exercise because the plan is written up front, every
+     * movement and its whole ramp, and then run top to bottom. Asking a single exercise for
+     * its next set cannot see the sets still pending in the exercise above it, so a session
+     * would start at whichever movement was added last.
+     *
+     * [SetEntry.position] is per-exercise, so it only orders within a movement — the
+     * exercise's own position is what puts the ramps in sequence. Planning a set on an
+     * earlier exercise therefore makes it next again, which is the plan being followed
+     * rather than an oversight.
+     */
+    fun nextPlannedSetInTraining(trainingId: Long): SetEntry? =
         db.rawQuery(
-            "SELECT $SET_COLS FROM set_entry WHERE exercise_id = ? AND completed_at IS NULL ORDER BY position LIMIT 1",
-            arrayOf(exerciseId.toString())
+            """
+            SELECT $JOINED_SET_COLS FROM set_entry s
+            JOIN exercise e ON e.id = s.exercise_id
+            WHERE e.training_id = ? AND s.completed_at IS NULL
+            ORDER BY e.position, s.position, s.id LIMIT 1
+            """.trimIndent(),
+            arrayOf(trainingId.toString())
         ).use { if (it.moveToFirst()) it.toSet() else null }
 
     /**

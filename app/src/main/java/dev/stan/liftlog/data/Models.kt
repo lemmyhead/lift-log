@@ -83,7 +83,7 @@ data class ExerciseWithSets(val exercise: Exercise, val sets: List<SetEntry>) {
     val completed: List<SetEntry> get() = sets.filter { it.done }
     val planned: List<SetEntry> get() = sets.filter { !it.done }
 
-    /** The set the lifter is on: the first one not yet finished. */
+    /** The next set within this exercise: the first one not yet finished. */
     val nextUp: SetEntry? get() = sets.firstOrNull { !it.done }
 
     val totalReps: Int get() = completed.sumOf { it.reps }
@@ -92,6 +92,16 @@ data class ExerciseWithSets(val exercise: Exercise, val sets: List<SetEntry>) {
 data class TrainingDetail(val training: Training, val exercises: List<ExerciseWithSets>) {
     val setCount: Int get() = exercises.sumOf { it.completed.size }
     val plannedRemaining: Int get() = exercises.sumOf { it.planned.size }
+
+    /**
+     * The set the lifter is on, training-wide: the first unfinished set in plan order, and
+     * the only one anywhere that is next.
+     *
+     * The screen's mirror of `Repo.nextPlannedSetInTraining` — [Repo.detail] returns
+     * exercises by position and each ramp by position, so walking them in order is the
+     * same traversal that query does.
+     */
+    val nextUp: SetEntry? get() = exercises.firstNotNullOfOrNull { it.nextUp }
     val totalReps: Int get() = exercises.sumOf { it.totalReps }
 
     val avgRestSeconds: Int

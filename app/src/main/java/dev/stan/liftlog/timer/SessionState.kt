@@ -63,14 +63,38 @@ data class SessionState(
     val setsThisSession: Int = 0,
     /** Rest target of the set in hand; 0 disables the alarm. */
     val restTargetSeconds: Int = 0,
-    val restTargetReached: Boolean = false
+    val restTargetReached: Boolean = false,
+    /** Nothing left to start: every planned set is done, and at least one of them was. */
+    val planComplete: Boolean = false
 ) {
     val active: Boolean get() = trainingId > 0
     val resting: Boolean get() = phase == Phase.REST
     val working: Boolean get() = phase == Phase.SET
 
+    /**
+     * The plan is done and the set cycle has run out: there is no set to start.
+     *
+     * Gated on [Phase.READY] because resting after the final set is normal — those phases
+     * still read "Racked"/"Resting" and still offer to start and end that rest. It is only
+     * once there is nothing left to come back to that the surfaces change what they offer.
+     */
+    val nothingToStart: Boolean get() = planComplete && phase == Phase.READY
+
+    /** What the phase card and the lock screen call the current state. */
+    val phaseTitle: String get() = if (nothingToStart) "Plan complete" else phase.title
+
+    /** What the one big button does next, on screen and on the lock screen alike. */
+    val actionLabel: String get() = if (nothingToStart) "End training" else phase.actionLabel
+
     fun phaseSeconds(now: Long): Int = secondsSince(phaseStartedAt, now)
     fun trainingSeconds(now: Long): Int = secondsSince(trainingStartedAt, now)
+
+    /**
+     * The clock both surfaces show: the current phase's, or the whole session's once the
+     * plan is finished — with no phase left to time, seconds since the last rest ended are
+     * not worth a 64sp number.
+     */
+    fun displaySeconds(now: Long): Int = if (nothingToStart) trainingSeconds(now) else phaseSeconds(now)
 
     /** Rest so far, counted from racking rather than from starting the countdown. */
     fun totalRestSeconds(now: Long): Int =

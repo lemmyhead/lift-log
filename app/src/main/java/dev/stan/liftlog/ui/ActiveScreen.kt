@@ -96,14 +96,22 @@ fun ActiveScreen(onDone: () -> Unit) {
             item {
                 PhaseCard(
                     phase = session.phase,
-                    seconds = session.phaseSeconds(now),
+                    title = session.phaseTitle,
+                    actionLabel = session.actionLabel,
+                    seconds = session.displaySeconds(now),
                     exercise = session.currentExercise,
                     setLabel = session.currentSetLabel,
                     totalRest = session.totalRestSeconds(now),
                     targetSeconds = session.restTargetSeconds,
                     remaining = session.restRemaining(now),
                     overrun = session.restOverrun(now),
-                    onAdvance = { SessionManager.advance(context) }
+                    // With the plan done the button ends the session instead — through the
+                    // same confirmation the top bar's Finish uses, since on screen there is
+                    // room to ask.
+                    onAdvance = {
+                        if (session.nothingToStart) confirmFinish = true
+                        else SessionManager.advance(context)
+                    }
                 )
             }
 
@@ -122,6 +130,7 @@ fun ActiveScreen(onDone: () -> Unit) {
                     ExerciseCard(
                         item = ex,
                         currentSetId = session.currentSetId,
+                        nextSetId = detail?.nextUp?.id ?: -1L,
                         onEditActuals = { editingActuals = it },
                         onEditPlan = { editingPlan = it },
                         onPlanSet = { planningFor = ex }
@@ -173,7 +182,8 @@ fun ActiveScreen(onDone: () -> Unit) {
     editingPlan?.let { set ->
         PlannedSetDialog(
             title = "Set ${detail.numberOfSet(set)}",
-            exerciseName = session.currentExercise,
+            exerciseName = detail?.exercises
+                ?.firstOrNull { it.exercise.id == set.exerciseId }?.exercise?.name.orEmpty(),
             initialReps = set.plannedReps,
             initialWeight = set.plannedWeight,
             initialRest = set.restTargetSeconds,
@@ -225,6 +235,8 @@ fun ActiveScreen(onDone: () -> Unit) {
 @Composable
 private fun PhaseCard(
     phase: Phase,
+    title: String,
+    actionLabel: String,
     seconds: Int,
     exercise: String,
     setLabel: String,
@@ -250,7 +262,7 @@ private fun PhaseCard(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Text(phase.title.uppercase(), style = MaterialTheme.typography.labelLarge, color = accent)
+            Text(title.uppercase(), style = MaterialTheme.typography.labelLarge, color = accent)
 
             Text(
                 formatClock(seconds),
@@ -304,7 +316,7 @@ private fun PhaseCard(
                 shape = RoundedCornerShape(14.dp)
             ) {
                 Text(
-                    phase.actionLabel,
+                    actionLabel,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
@@ -317,6 +329,7 @@ private fun PhaseCard(
 private fun ExerciseCard(
     item: ExerciseWithSets,
     currentSetId: Long,
+    nextSetId: Long,
     onEditActuals: (SetEntry) -> Unit,
     onEditPlan: (SetEntry) -> Unit,
     onPlanSet: () -> Unit
@@ -352,7 +365,7 @@ private fun ExerciseCard(
                     set = set,
                     number = index + 1,
                     isCurrent = set.id == currentSetId,
-                    isNext = set.id == item.nextUp?.id,
+                    isNext = set.id == nextSetId,
                     onClick = { if (set.done) onEditActuals(set) else onEditPlan(set) }
                 )
             }

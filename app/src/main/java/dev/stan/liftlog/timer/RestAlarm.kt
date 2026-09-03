@@ -32,6 +32,7 @@ object RestAlarm {
     const val EXTRA_EXERCISE = "exercise"
     const val EXTRA_SET_POSITION = "set_position"
     const val EXTRA_SET_CORE = "set_core"
+    const val EXTRA_PLAN_COMPLETE = "plan_complete"
 
     const val CHANNEL_ID = "rest_done"
     private const val NOTIFICATION_ID = 1002
@@ -46,7 +47,8 @@ object RestAlarm {
         targetSeconds: Int,
         exercise: String,
         setPosition: Int = 0,
-        setCore: String = ""
+        setCore: String = "",
+        planComplete: Boolean = false
     ): PendingIntent {
         val intent = Intent(context.applicationContext, RestAlarmReceiver::class.java)
             .setAction(ACTION_FIRE)
@@ -55,6 +57,7 @@ object RestAlarm {
             .putExtra(EXTRA_EXERCISE, exercise)
             .putExtra(EXTRA_SET_POSITION, setPosition)
             .putExtra(EXTRA_SET_CORE, setCore)
+            .putExtra(EXTRA_PLAN_COMPLETE, planComplete)
         return PendingIntent.getBroadcast(
             context.applicationContext, REQUEST_CODE, intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
@@ -78,7 +81,8 @@ object RestAlarm {
         val triggerAt = restStartedAt + targetSeconds * 1000L
         val pending = pendingIntent(
             app, restStartedAt, targetSeconds,
-            state.currentExercise, state.currentSetPosition, state.currentSetCore
+            state.currentExercise, state.currentSetPosition, state.currentSetCore,
+            state.planComplete
         )
 
         runCatching {
@@ -135,7 +139,14 @@ object RestAlarm {
         )
     }
 
-    fun alert(context: Context, targetSeconds: Int, exercise: String, setPosition: Int, setCore: String) {
+    fun alert(
+        context: Context,
+        targetSeconds: Int,
+        exercise: String,
+        setPosition: Int,
+        setCore: String,
+        planComplete: Boolean
+    ) {
         createChannel(context)
 
         val open = PendingIntent.getActivity(
@@ -147,7 +158,8 @@ object RestAlarm {
 
         // "Next:" is a promise about a specific set, so it is only made when there is a
         // load to name; with the ramp exhausted the alert falls back to a plain prompt.
-        val body = if (setCore.isBlank()) "Back under the bar" else "Next: " + listOfNotNull(
+        val body = if (planComplete) "That was the last set — plan complete"
+        else if (setCore.isBlank()) "Back under the bar" else "Next: " + listOfNotNull(
             exercise.ifBlank { null },
             setPosition.takeIf { it > 0 }?.let { "set $it" },
             setCore
@@ -166,8 +178,16 @@ object RestAlarm {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(true)
             .setContentIntent(open)
-            .addAction(0, "Start set", action(context, SessionService.ACTION_START_SET, 3))
-            .addAction(0, "+1:00", action(context, SessionService.ACTION_EXTEND_REST, 4))
+            // Nothing left to go back under the bar for, so neither button it would
+            // normally carry means anything: the only honest offer is to close the session.
+            .apply {
+                if (planComplete) {
+                    addAction(0, "End training", action(context, SessionService.ACTION_END, 5))
+                } else {
+                    addAction(0, "Start set", action(context, SessionService.ACTION_START_SET, 3))
+                    addAction(0, "+1:00", action(context, SessionService.ACTION_EXTEND_REST, 4))
+                }
+            }
             .build()
 
         notifications(context).notify(NOTIFICATION_ID, notification)
@@ -184,13 +204,14 @@ class RestAlarmReceiver : BroadcastReceiver() {
         val exercise = intent.getStringExtra(RestAlarm.EXTRA_EXERCISE).orEmpty()
         val setPosition = intent.getIntExtra(RestAlarm.EXTRA_SET_POSITION, 0)
         val setCore = intent.getStringExtra(RestAlarm.EXTRA_SET_CORE).orEmpty()
+        val planComplete = intent.getBooleanExtra(RestAlarm.EXTRA_PLAN_COMPLETE, false)
 
         // A rest that was already ended must not still ring. Checked against the persisted
         // stamp rather than in-memory state, because this can run in a fresh process.
         val current = SessionManager.persistedRestStartedAt(context)
         if (scheduledFor != 0L && current != scheduledFor) return
 
-        RestAlarm.alert(context, target, exercise, setPosition, setCore)
+        RestAlarm.alert(context, target, exercise, setPosition, setCore, planComplete)
         SessionManager.markRestTargetReached(context)
     }
 }

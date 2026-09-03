@@ -154,8 +154,8 @@ class SessionService : LifecycleService() {
 
         // The phase and its clock read as one line — "Resting · 2:31" — rather than leaning
         // on the platform chronometer in the corner, which would show the same number twice.
-        val phase = if (state.phase == Phase.REST && state.restTargetReached) "Rest is up" else state.phase.title
-        val title = "$phase · ${formatClock(state.phaseSeconds(now))}"
+        val phase = if (state.phase == Phase.REST && state.restTargetReached) "Rest is up" else state.phaseTitle
+        val title = "$phase · ${formatClock(state.displaySeconds(now))}"
 
         // What is in hand: movement, which set of the ramp, and the load on the bar.
         val movement = state.currentExercise.ifBlank { "No exercise yet" }
@@ -196,7 +196,11 @@ class SessionService : LifecycleService() {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setContentIntent(openApp)
-            .addAction(0, state.phase.actionLabel, pending(ACTION_TOGGLE, 1))
+            // A finished plan has nothing to start, so the button that would start it is
+            // dropped rather than left to do nothing.
+            .apply {
+                if (!state.nothingToStart) addAction(0, state.actionLabel, pending(ACTION_TOGGLE, 1))
+            }
             .addAction(0, "End training", pending(ACTION_END, 2))
             .build()
     }
