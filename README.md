@@ -99,13 +99,13 @@ or straight into a spreadsheet.
 
 ## Install
 
-The APK is at `app/build/outputs/apk/debug/app-debug.apk`.
+A ready-to-install APK is committed at `LiftLog.apk` in the repo root.
 
 Copy it to the phone and open it, then allow installs from that source when Android asks.
 Or over USB with debugging enabled:
 
 ```bash
-~/.liftlog-toolchain/sdk/platform-tools/adb install -r app/build/outputs/apk/debug/app-debug.apk
+~/.liftlog-toolchain/sdk/platform-tools/adb install -r LiftLog.apk
 ```
 
 Grant the notification permission on first launch — without it the lock-screen controls
@@ -148,11 +148,18 @@ at its right edge, to reveal the phase button (`Start set` / `End set` / `Start 
 ## Rebuilding
 
 ```bash
-cd "/Users/stasskrypnikov/Documents/mob app" && . ~/.liftlog-toolchain/env.sh && gradle :app:assembleDebug
+. ~/.liftlog-toolchain/env.sh && gradle :app:assembleRelease
 ```
 
+Run it from the repo root. The output lands at `app/build/outputs/apk/release/app-release.apk`;
+copy it over `LiftLog.apk` to refresh the committed artifact. Release rather than debug because
+the signing config uses the debug key either way, so a release build is still sideloadable and
+is a third smaller.
+
 The toolchain (JDK 17, Android SDK 34, Gradle 8.7) lives in `~/.liftlog-toolchain` and is
-self-contained — nothing was installed into system directories.
+self-contained — nothing was installed into system directories. It carries no emulator and no
+system image: verification happens on a real phone, so a change to the notification or timer
+paths is compile-checked here and confirmed by sideloading.
 
 ## Data
 
