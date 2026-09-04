@@ -37,6 +37,8 @@ class SessionService : LifecycleService() {
         const val ACTION_END = "dev.stan.liftlog.END"
         const val ACTION_START_SET = "dev.stan.liftlog.START_SET"
         const val ACTION_EXTEND_REST = "dev.stan.liftlog.EXTEND_REST"
+        /** Dismissing the alert: stop the noise, leave the rest running. */
+        const val ACTION_SILENCE = "dev.stan.liftlog.SILENCE"
         private const val CHANNEL_ID = "session"
         private const val NOTIFICATION_ID = 1001
     }
@@ -55,9 +57,11 @@ class SessionService : LifecycleService() {
         lifecycleScope.launch {
             SessionManager.state.collectLatest { state ->
                 if (!state.active) {
+                    RestRinger.sync(this@SessionService, state)
                     stopForeground(STOP_FOREGROUND_REMOVE)
                     stopSelf()
                 } else {
+                    RestRinger.sync(this@SessionService, state)
                     notifications.notify(NOTIFICATION_ID, buildNotification(state))
 
                     // The rest lines count in seconds, and a notification does not redraw
@@ -68,6 +72,9 @@ class SessionService : LifecycleService() {
                     if (state.phase == Phase.RACKED || state.phase == Phase.REST) {
                         while (true) {
                             delay(1_000)
+                            // Also where the ring's own timeout is checked — this loop runs
+                            // for exactly the phases the alarm can be ringing in.
+                            RestRinger.sync(this@SessionService, state)
                             notifications.notify(NOTIFICATION_ID, buildNotification(state))
                         }
                     }
@@ -96,10 +103,17 @@ class SessionService : LifecycleService() {
             ACTION_END -> SessionManager.endTraining(this)
             ACTION_START_SET -> SessionManager.startNextSet(this)
             ACTION_EXTEND_REST -> SessionManager.extendRest(this)
+            ACTION_SILENCE -> RestRinger.silence(this)
         }
         // The session is persisted, so a system restart of this service has nothing to
         // add; MainActivity revives the notification instead.
         return START_NOT_STICKY
+    }
+
+    override fun onDestroy() {
+        // The player is held by this service; nothing else would ever release it.
+        RestRinger.release(this)
+        super.onDestroy()
     }
 
     private fun startForegroundCompat(notification: Notification) {

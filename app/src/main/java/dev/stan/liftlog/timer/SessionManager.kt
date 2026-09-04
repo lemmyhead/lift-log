@@ -408,6 +408,10 @@ object SessionManager {
 
     /** Called by the alarm receiver so the ongoing notification can say the rest is up. */
     fun markRestTargetReached(context: Context) = scope.launch {
+        // The alarm can be delivered to a process spawned only to receive it, where nothing
+        // has read the session off disk yet. Without this the state is the empty default,
+        // the mark is dropped as "no rest running", and the alarm never rings.
+        if (!_state.value.active) restore(context)
         val s = _state.value
         if (!s.active || s.phase != Phase.REST) return@launch
         _state.value = s.copy(restTargetReached = true)

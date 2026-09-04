@@ -107,6 +107,14 @@ object RestAlarm {
     /**
      * Audible and heads-up, unlike the silent ongoing session notification. Created once —
      * channel settings are fixed after the first launch, so this is deliberately explicit.
+     *
+     * The tone here is the one-off ping the system plays on posting; the alarm that keeps
+     * going is [RestRinger], which the service holds. Both is deliberate. A channel sound
+     * cannot be changed after the channel exists, so quieting this ping would mean a new
+     * channel id — and HyperOS files channels it reads as silent away from the lock screen,
+     * which is the behaviour this app's whole setup section exists to defeat. The ping also
+     * rides USAGE_NOTIFICATION_EVENT, so it is suppressed on silent and under Do Not
+     * Disturb, exactly where the alarm stream still sounds.
      */
     fun createChannel(context: Context) {
         val sound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
@@ -175,6 +183,9 @@ object RestAlarm {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(true)
             .setContentIntent(open)
+            // Swiping it away means "heard it": the noise stops, the rest keeps running,
+            // and the ongoing notification still carries "End rest".
+            .setDeleteIntent(action(context, SessionService.ACTION_SILENCE, 6))
             // Nothing left to go back under the bar for, so neither button it would
             // normally carry means anything: the only honest offer is to close the session.
             .apply {

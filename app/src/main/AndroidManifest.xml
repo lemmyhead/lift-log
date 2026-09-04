@@ -6,6 +6,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- MediaPlayer.setWakeMode, so the rest alarm keeps sounding with the screen off. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- USE_EXACT_ALARM is auto-granted on Android 13+; SCHEDULE_EXACT_ALARM covers 12. -->
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
