@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The expanded row, and the rest alert's heads-up.
+
+  Sized to the tighter of its two budgets. The alert is IMPORTANCE_HIGH, so it is seen as a
+  heads-up, whose floor is 88dp: with the optional rows hidden and the body wrapping to two
+  lines this lands right about there. The session's expanded view shows everything and reaches
+  ~114dp against a 252dp budget, and bumps the clock to 34sp from code — so the alert does not
+  have to pay for the session's hero number just because they share a layout.
+
+  Sharing matters beyond tidiness: SystemUI only takes its cheap reapply path when the layout
+  id already inflated matches the incoming one, and the session notification re-posts once a
+  second. One id per field, with rows hidden rather than layouts swapped, is what keeps that
+  path and keeps the shade from flickering.
+
+  On the explicit textColor on every row, and on avoiding textAppearance, see the compact
+  layout — same reason, same trap.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/notification_panel"
+    android:paddingStart="14dp"
+    android:paddingEnd="14dp"
+    android:paddingTop="6dp"
+    android:paddingBottom="6dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="bottom">
+
+        <!-- Our own glyph, in our own layout. HyperOS swaps the launcher icon in for the
+             small icon in the system header, so this is the one place the mark can be lime. -->
+        <ImageView
+            android:id="@+id/panel_glyph"
+            android:layout_width="14dp"
+            android:layout_height="14dp"
+            android:layout_marginEnd="6dp"
+            android:layout_marginBottom="3dp"
+            android:src="@drawable/ic_stat_session"
+            android:tint="@color/notification_accent"
+            android:importantForAccessibility="no" />
+
+        <TextView
+            android:id="@+id/panel_clock"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="26sp"
+            android:textStyle="bold"
+            android:fontFamily="monospace"
+            android:textColor="@color/notification_accent"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            tools:text="2:31" />
+
+        <TextView
+            android:id="@+id/panel_phase"
+            android:layout_width="0dp"
+            android:layout_weight="1"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:layout_marginBottom="2dp"
+            android:textSize="13sp"
+            android:textColor="@color/notification_accent_dim"
+            android:includeFontPadding="false"
+            android:maxLines="1"
+            android:ellipsize="end"
+            tools:text="Resting" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/panel_primary"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="3dp"
+        android:textSize="14sp"
+        android:textColor="@color/notification_text_primary"
+        android:includeFontPadding="false"
+        android:maxLines="2"
+        android:ellipsize="end"
+        tools:text="Back squat · set 3 · 160 kg × 5" />
+
+    <TextView
+        android:id="@+id/panel_secondary"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:textSize="12sp"
+        android:textColor="@color/notification_text_secondary"
+        android:includeFontPadding="false"
+        android:maxLines="1"
+        android:ellipsize="end"
+        android:visibility="gone"
+        tools:text="target 1:30 · 0:42 since rack" />
+
+    <ProgressBar
+        android:id="@+id/panel_progress"
+        style="@android:style/Widget.Material.ProgressBar.Horizontal"
+        android:layout_width="match_parent"
+        android:layout_height="4dp"
+        android:layout_marginTop="6dp"
+        android:minHeight="4dp"
+        android:maxHeight="4dp"
+        android:max="100"
+        android:indeterminate="false"
+        android:progressDrawable="@drawable/notification_progress"
+        android:visibility="gone" />
+</LinearLayout>

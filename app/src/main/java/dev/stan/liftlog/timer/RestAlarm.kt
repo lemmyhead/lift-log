@@ -14,7 +14,6 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import dev.stan.liftlog.MainActivity
 import dev.stan.liftlog.R
-import dev.stan.liftlog.data.formatClock
 
 /**
  * The "your rest is up" alert.
@@ -156,20 +155,18 @@ object RestAlarm {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // "Next:" is a promise about a specific set, so it is only made when there is a
-        // load to name; with the ramp exhausted the alert falls back to a plain prompt.
-        val body = if (planComplete) "That was the last set — plan complete"
-        else if (setCore.isBlank()) "Back under the bar" else "Next: " + listOfNotNull(
-            exercise.ifBlank { null },
-            setPosition.takeIf { it > 0 }?.let { "set $it" },
-            setCore
-        ).joinToString(" · ")
+        val copy = restDoneCopy(targetSeconds, exercise, setPosition, setCore, planComplete)
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_session)
             .setSubText("Rest complete")
-            .setContentTitle("${formatClock(targetSeconds)} rest is up")
-            .setContentText(body)
+            // Not drawn under a custom view, but still what fills EXTRA_TITLE/EXTRA_TEXT —
+            // and this is the notification that has to survive being read aloud.
+            .setContentTitle(copy.title)
+            .setContentText(copy.fallbackText)
+            // headsUp because this is an IMPORTANCE_HIGH channel: the alert is seen as a
+            // heads-up far more often than it is seen in the shade.
+            .withPanel(context, copy, headsUp = true)
             .setColor(ContextCompat.getColor(context, R.color.notification_accent))
             .setWhen(System.currentTimeMillis())
             .setShowWhen(true)

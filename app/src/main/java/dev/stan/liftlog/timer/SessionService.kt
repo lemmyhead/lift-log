@@ -15,8 +15,6 @@ import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import dev.stan.liftlog.MainActivity
 import dev.stan.liftlog.R
-import dev.stan.liftlog.data.formatClock
-import dev.stan.liftlog.data.plural
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -149,44 +147,17 @@ class SessionService : LifecycleService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val now = System.currentTimeMillis()
-        val overrun = state.restOverrun(now)
-
-        // The phase and its clock read as one line — "Resting · 2:31" — rather than leaning
-        // on the platform chronometer in the corner, which would show the same number twice.
-        val phase = if (state.phase == Phase.REST && state.restTargetReached) "Rest is up" else state.phaseTitle
-        val title = "$phase · ${formatClock(state.displaySeconds(now))}"
-
-        // What is in hand: movement, which set of the ramp, and the load on the bar.
-        val movement = state.currentExercise.ifBlank { "No exercise yet" }
-        val load = state.currentSetCore.ifBlank {
-            state.currentSetLabel.ifBlank { plural(state.setsThisSession, "set") + " logged" }
-        }
-        val headline = listOfNotNull(
-            movement,
-            state.currentSetPosition.takeIf { it > 0 }?.let { "set $it" },
-            load
-        ).joinToString(" · ")
-
-        // Second line, only where rest is running: the target, and how long since the rack —
-        // which is the number that decides whether the next set is going to go.
-        val target = state.restTargetSeconds.takeIf { it > 0 }?.let { "target ${formatClock(it)}" }
-        val rest = when (state.phase) {
-            Phase.REST, Phase.RACKED ->
-                if (overrun != null) "${formatClock(overrun)} over target"
-                else "${formatClock(state.totalRestSeconds(now))} since rack"
-            else -> null
-        }
-        val detail = listOfNotNull(target, rest).takeIf { it.isNotEmpty() }?.joinToString(" · ")
-
-        val body = if (detail != null) "$headline\n$detail" else headline
+        val copy = sessionCopy(state, System.currentTimeMillis())
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_session)
             .setSubText("Workout session")
-            .setContentTitle(title)
-            .setContentText(headline)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            // Not drawn any more, now that the body is ours — but still the only thing that
+            // populates EXTRA_TITLE/EXTRA_TEXT, which is what TalkBack, notification history
+            // and any surface declining to render our layout read instead. Keep them.
+            .setContentTitle(copy.title)
+            .setContentText(copy.fallbackText)
+            .withPanel(this, copy, clockSp = 34f)
             .setColor(ContextCompat.getColor(this, R.color.notification_accent))
             .setShowWhen(false)
             .setOngoing(true)
