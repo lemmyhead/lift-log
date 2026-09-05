@@ -14,6 +14,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.MonitorHeart
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -28,6 +29,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -41,14 +43,19 @@ import dev.stan.liftlog.data.formatDayTime
 import dev.stan.liftlog.data.formatShort
 import dev.stan.liftlog.data.plural
 import dev.stan.liftlog.timer.SessionManager
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     onStartOrResume: () -> Unit,
-    onOpenTraining: (Long) -> Unit
+    onOpenTraining: (Long) -> Unit,
+    onOpenFatigue: () -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val session by SessionManager.state.collectAsStateWithLifecycle()
     val history = rememberAllDetails()
     val finished = history.filter { it.training.endedAt != null }
@@ -58,8 +65,22 @@ fun HomeScreen(
             TopAppBar(
                 title = { Text("Lift Log") },
                 actions = {
+                    IconButton(onClick = onOpenFatigue) {
+                        Icon(Icons.Default.MonitorHeart, contentDescription = "Fatigue")
+                    }
                     IconButton(
-                        onClick = { context.startActivity(Export.shareIntent(context, finished)) },
+                        onClick = {
+                            // Off the main thread: this builds the whole log into two strings
+                            // and writes them, and the work grows with every session logged.
+                            scope.launch {
+                                val uris = withContext(Dispatchers.IO) {
+                                    // One clock for both files, so their week series cannot
+                                    // end a week apart across a Sunday midnight.
+                                    Export.writeExports(context, finished, System.currentTimeMillis())
+                                }
+                                context.startActivity(Export.chooserFor(uris))
+                            }
+                        },
                         enabled = finished.isNotEmpty()
                     ) {
                         Icon(Icons.Default.Share, contentDescription = "Export CSV")
