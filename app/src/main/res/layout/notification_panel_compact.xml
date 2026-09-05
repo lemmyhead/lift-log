@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The collapsed row, for both notifications.
+
+  Budget is 48dp, and this comes to about 41dp: 14sp + 12sp + 4dp of vertical padding, with
+  includeFontPadding off to buy the headroom. It carries exactly the two pieces of
+  information the templated notification carried before, so nothing is lost by collapsing.
+
+  Every TextView states its own colour on purpose. A RemoteViews is inflated by SystemUI
+  against a context built from ApplicationInfo, which does not carry Theme.LiftLog — the
+  fallback for targetSdk 34 is a light theme, so an uncoloured TextView would come out
+  near-black and vanish on this near-black panel. For the same reason nothing here uses
+  textAppearance: TextAppearance.Compat.Notification resolves against that same light theme.
+-->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@drawable/notification_panel"
+    android:paddingStart="12dp"
+    android:paddingEnd="12dp"
+    android:paddingTop="4dp"
+    android:paddingBottom="4dp">
+
+    <TextView
+        android:id="@+id/panel_title"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:fontFamily="monospace"
+        android:textColor="@color/notification_accent"
+        android:includeFontPadding="false"
+        android:maxLines="1"
+        android:ellipsize="end"
+        tools:text="Resting · 2:31" />
+
+    <TextView
+        android:id="@+id/panel_primary"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="2dp"
+        android:textSize="12sp"
+        android:textColor="@color/notification_text_secondary"
+        android:includeFontPadding="false"
+        android:maxLines="1"
+        android:ellipsize="end"
+        tools:text="Back squat · set 3 · 160 kg × 5" />
+</LinearLayout>

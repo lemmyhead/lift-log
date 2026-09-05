@@ -1,5 +1,23 @@
 <resources>
     <color name="ic_launcher_background">#12161C</color>
-    <!-- Accent for both notification surfaces; shared so they cannot drift apart. -->
-    <color name="notification_accent">#D8FF3F</color>
+
+    <!--
+      One palette for both notification surfaces; shared so they cannot drift apart.
+
+      Both surfaces draw their own panel, so these are fixed rather than theme-following:
+      a RemoteViews is inflated by SystemUI against a light default theme, and the panel
+      sits inside a shell that may be light or dark. Every contrast below is therefore
+      stated against notification_panel, and holds either way.
+    -->
+    <color name="notification_accent">#D8FF3F</color>          <!-- 16.6:1 on the panel -->
+    <color name="notification_accent_dim">#A8C63A</color>      <!--  9.9:1 -->
+    <color name="notification_text_primary">#E6E9EF</color>    <!-- 15.6:1 -->
+    <color name="notification_text_secondary">#AFB7C4</color>  <!--  9.4:1 -->
+
+    <!-- The app's own windowBackground, so the notification reads as a slice of the app. -->
+    <color name="notification_panel">#0F1115</color>
+    <!-- Not decoration: the panel is near-black on a near-black shade, and without an
+         edge it stops reading as a card at all. -->
+    <color name="notification_panel_stroke">#2A3242</color>
+    <color name="notification_progress_track">#2A3242</color>
 </resources>

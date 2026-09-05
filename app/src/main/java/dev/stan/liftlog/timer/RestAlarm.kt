@@ -14,7 +14,6 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import dev.stan.liftlog.MainActivity
 import dev.stan.liftlog.R
-import dev.stan.liftlog.data.formatClock
 
 /**
  * The "your rest is up" alert.
@@ -108,6 +107,14 @@ object RestAlarm {
     /**
      * Audible and heads-up, unlike the silent ongoing session notification. Created once —
      * channel settings are fixed after the first launch, so this is deliberately explicit.
+     *
+     * The tone here is the one-off ping the system plays on posting; the alarm that keeps
+     * going is [RestRinger], which the service holds. Both is deliberate. A channel sound
+     * cannot be changed after the channel exists, so quieting this ping would mean a new
+     * channel id — and HyperOS files channels it reads as silent away from the lock screen,
+     * which is the behaviour this app's whole setup section exists to defeat. The ping also
+     * rides USAGE_NOTIFICATION_EVENT, so it is suppressed on silent and under Do Not
+     * Disturb, exactly where the alarm stream still sounds.
      */
     fun createChannel(context: Context) {
         val sound = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
@@ -156,20 +163,18 @@ object RestAlarm {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        // "Next:" is a promise about a specific set, so it is only made when there is a
-        // load to name; with the ramp exhausted the alert falls back to a plain prompt.
-        val body = if (planComplete) "That was the last set — plan complete"
-        else if (setCore.isBlank()) "Back under the bar" else "Next: " + listOfNotNull(
-            exercise.ifBlank { null },
-            setPosition.takeIf { it > 0 }?.let { "set $it" },
-            setCore
-        ).joinToString(" · ")
+        val copy = restDoneCopy(targetSeconds, exercise, setPosition, setCore, planComplete)
 
         val notification = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_session)
             .setSubText("Rest complete")
-            .setContentTitle("${formatClock(targetSeconds)} rest is up")
-            .setContentText(body)
+            // Not drawn under a custom view, but still what fills EXTRA_TITLE/EXTRA_TEXT —
+            // and this is the notification that has to survive being read aloud.
+            .setContentTitle(copy.title)
+            .setContentText(copy.fallbackText)
+            // headsUp because this is an IMPORTANCE_HIGH channel: the alert is seen as a
+            // heads-up far more often than it is seen in the shade.
+            .withPanel(context, copy, headsUp = true)
             .setColor(ContextCompat.getColor(context, R.color.notification_accent))
             .setWhen(System.currentTimeMillis())
             .setShowWhen(true)
@@ -178,6 +183,9 @@ object RestAlarm {
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setAutoCancel(true)
             .setContentIntent(open)
+            // Swiping it away means "heard it": the noise stops, the rest keeps running,
+            // and the ongoing notification still carries "End rest".
+            .setDeleteIntent(action(context, SessionService.ACTION_SILENCE, 6))
             // Nothing left to go back under the bar for, so neither button it would
             // normally carry means anything: the only honest offer is to close the session.
             .apply {

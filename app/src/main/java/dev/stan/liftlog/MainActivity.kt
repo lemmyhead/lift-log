@@ -10,6 +10,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
 import dev.stan.liftlog.data.Repo
+import dev.stan.liftlog.timer.RestRinger
 import dev.stan.liftlog.timer.SessionManager
 import dev.stan.liftlog.ui.AppRoot
 import dev.stan.liftlog.ui.LiftLogTheme
@@ -39,6 +40,9 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         // The lock-screen buttons may have logged sets while the UI was gone.
         SessionManager.refreshCounts()
+        // Reading the screen is acknowledgement enough — an alarm still going off while the
+        // lifter is looking at the app has nothing left to tell them. The rest is untouched.
+        RestRinger.silence(this)
     }
 
     /** Without this the lock-screen controls have nowhere to live on Android 13+. */

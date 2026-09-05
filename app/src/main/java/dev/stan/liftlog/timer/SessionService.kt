@@ -15,8 +15,6 @@ import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import dev.stan.liftlog.MainActivity
 import dev.stan.liftlog.R
-import dev.stan.liftlog.data.formatClock
-import dev.stan.liftlog.data.plural
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -39,6 +37,8 @@ class SessionService : LifecycleService() {
         const val ACTION_END = "dev.stan.liftlog.END"
         const val ACTION_START_SET = "dev.stan.liftlog.START_SET"
         const val ACTION_EXTEND_REST = "dev.stan.liftlog.EXTEND_REST"
+        /** Dismissing the alert: stop the noise, leave the rest running. */
+        const val ACTION_SILENCE = "dev.stan.liftlog.SILENCE"
         private const val CHANNEL_ID = "session"
         private const val NOTIFICATION_ID = 1001
     }
@@ -57,9 +57,11 @@ class SessionService : LifecycleService() {
         lifecycleScope.launch {
             SessionManager.state.collectLatest { state ->
                 if (!state.active) {
+                    RestRinger.sync(this@SessionService, state)
                     stopForeground(STOP_FOREGROUND_REMOVE)
                     stopSelf()
                 } else {
+                    RestRinger.sync(this@SessionService, state)
                     notifications.notify(NOTIFICATION_ID, buildNotification(state))
 
                     // The rest lines count in seconds, and a notification does not redraw
@@ -70,6 +72,9 @@ class SessionService : LifecycleService() {
                     if (state.phase == Phase.RACKED || state.phase == Phase.REST) {
                         while (true) {
                             delay(1_000)
+                            // Also where the ring's own timeout is checked — this loop runs
+                            // for exactly the phases the alarm can be ringing in.
+                            RestRinger.sync(this@SessionService, state)
                             notifications.notify(NOTIFICATION_ID, buildNotification(state))
                         }
                     }
@@ -98,10 +103,17 @@ class SessionService : LifecycleService() {
             ACTION_END -> SessionManager.endTraining(this)
             ACTION_START_SET -> SessionManager.startNextSet(this)
             ACTION_EXTEND_REST -> SessionManager.extendRest(this)
+            ACTION_SILENCE -> RestRinger.silence(this)
         }
         // The session is persisted, so a system restart of this service has nothing to
         // add; MainActivity revives the notification instead.
         return START_NOT_STICKY
+    }
+
+    override fun onDestroy() {
+        // The player is held by this service; nothing else would ever release it.
+        RestRinger.release(this)
+        super.onDestroy()
     }
 
     private fun startForegroundCompat(notification: Notification) {
@@ -149,44 +161,17 @@ class SessionService : LifecycleService() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val now = System.currentTimeMillis()
-        val overrun = state.restOverrun(now)
-
-        // The phase and its clock read as one line — "Resting · 2:31" — rather than leaning
-        // on the platform chronometer in the corner, which would show the same number twice.
-        val phase = if (state.phase == Phase.REST && state.restTargetReached) "Rest is up" else state.phaseTitle
-        val title = "$phase · ${formatClock(state.displaySeconds(now))}"
-
-        // What is in hand: movement, which set of the ramp, and the load on the bar.
-        val movement = state.currentExercise.ifBlank { "No exercise yet" }
-        val load = state.currentSetCore.ifBlank {
-            state.currentSetLabel.ifBlank { plural(state.setsThisSession, "set") + " logged" }
-        }
-        val headline = listOfNotNull(
-            movement,
-            state.currentSetPosition.takeIf { it > 0 }?.let { "set $it" },
-            load
-        ).joinToString(" · ")
-
-        // Second line, only where rest is running: the target, and how long since the rack —
-        // which is the number that decides whether the next set is going to go.
-        val target = state.restTargetSeconds.takeIf { it > 0 }?.let { "target ${formatClock(it)}" }
-        val rest = when (state.phase) {
-            Phase.REST, Phase.RACKED ->
-                if (overrun != null) "${formatClock(overrun)} over target"
-                else "${formatClock(state.totalRestSeconds(now))} since rack"
-            else -> null
-        }
-        val detail = listOfNotNull(target, rest).takeIf { it.isNotEmpty() }?.joinToString(" · ")
-
-        val body = if (detail != null) "$headline\n$detail" else headline
+        val copy = sessionCopy(state, System.currentTimeMillis())
 
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_session)
             .setSubText("Workout session")
-            .setContentTitle(title)
-            .setContentText(headline)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            // Not drawn any more, now that the body is ours — but still the only thing that
+            // populates EXTRA_TITLE/EXTRA_TEXT, which is what TalkBack, notification history
+            // and any surface declining to render our layout read instead. Keep them.
+            .setContentTitle(copy.title)
+            .setContentText(copy.fallbackText)
+            .withPanel(this, copy, clockSp = 34f)
             .setColor(ContextCompat.getColor(this, R.color.notification_accent))
             .setShowWhen(false)
             .setOngoing(true)
