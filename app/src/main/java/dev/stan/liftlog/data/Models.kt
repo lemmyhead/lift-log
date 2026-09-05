@@ -5,7 +5,16 @@ data class Training(
     val id: Long,
     val startedAt: Long,
     val endedAt: Long?,
-    val notes: String
+    val notes: String,
+    /**
+     * Grip strength measured before lifting, in kg; null when it was never taken.
+     *
+     * One reading for the whole session, and deliberately a *pre*-session one: taken fresh it
+     * measures how the nervous system is firing today, taken afterwards it measures how much
+     * the session took out of you. Averaging the two kinds together over weeks would make the
+     * chronic baseline mean nothing.
+     */
+    val gripKg: Double? = null
 ) {
     val durationSeconds: Int
         get() = (((endedAt ?: System.currentTimeMillis()) - startedAt) / 1000).toInt()

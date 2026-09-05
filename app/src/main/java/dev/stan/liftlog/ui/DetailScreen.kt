@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.DeleteOutline
@@ -34,12 +35,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import dev.stan.liftlog.data.Repo
 import dev.stan.liftlog.data.SetEntry
 import dev.stan.liftlog.data.formatClock
 import dev.stan.liftlog.data.formatDayTime
 import dev.stan.liftlog.data.formatShort
+import dev.stan.liftlog.data.formatWeight
 import dev.stan.liftlog.data.numberOf
 import dev.stan.liftlog.data.numberOfSet
 import dev.stan.liftlog.data.plural
@@ -54,9 +57,13 @@ fun DetailScreen(trainingId: Long, onBack: () -> Unit) {
     var editing by remember { mutableStateOf<SetEntry?>(null) }
     var confirmDelete by remember { mutableStateOf(false) }
     var notes by remember { mutableStateOf("") }
+    var grip by remember { mutableStateOf("") }
 
     LaunchedEffect(detail?.training?.id) {
-        detail?.let { notes = it.training.notes }
+        detail?.let {
+            notes = it.training.notes
+            grip = it.training.gripKg?.let { kg -> formatWeight(kg) } ?: ""
+        }
     }
 
     Scaffold(
@@ -128,6 +135,29 @@ fun DetailScreen(trainingId: Long, onBack: () -> Unit) {
                         }
                     }
                 }
+            }
+
+            item {
+                // Here as well as on the live screen, for the session where the squeeze was
+                // taken but never typed in. Blank clears it, which is the honest way to undo a
+                // reading rather than replacing it with a zero.
+                val parsed = grip.replace(',', '.').toDoubleOrNull()
+                val plausible = parsed != null && parsed in 1.0..150.0
+                OutlinedTextField(
+                    value = grip,
+                    onValueChange = {
+                        grip = it
+                        val v = it.replace(',', '.').toDoubleOrNull()
+                        if (it.isBlank() || (v != null && v in 1.0..150.0)) {
+                            scope.launch(Dispatchers.IO) { Repo.setGrip(trainingId, v) }
+                        }
+                    },
+                    label = { Text("Pre-session grip (kg)") },
+                    singleLine = true,
+                    isError = grip.isNotBlank() && !plausible,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth()
+                )
             }
 
             item {
