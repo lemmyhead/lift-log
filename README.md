@@ -52,8 +52,9 @@ ramp still reads correctly months later.
 
 ## Rest alarm
 
-Every planned set carries its own rest target, and the phone sounds a notification and
-vibrates when it elapses. Presets run 0:45 to 7:00, plus off.
+Every planned set carries its own rest target, and when it elapses the phone rings — a real
+alarm that keeps going, not a single ping you can sleep through. Presets run 0:45 to 7:00,
+plus off.
 
 The timer keeps counting past the target rather than stopping, so the log records the rest
 you actually took — the card shows `0:15 over your 5:00 target` once you run long.
@@ -62,6 +63,30 @@ The alert is scheduled through `AlarmManager` as an exact wake-up alarm, which i
 mechanism that reliably fires while the phone is idle in a bag. The `USE_EXACT_ALARM`
 permission it relies on is granted automatically on Android 13+, so there is nothing to
 enable. Ending a rest early, or finishing the session, cancels the pending alarm.
+
+**It rings until you deal with it.** The sound is your own alarm tone played on the alarm
+stream, so it carries through silent mode and Do Not Disturb, with a repeating vibration
+alongside it. What stops it:
+
+| What you do | Sound | Rest |
+|---|---|---|
+| **Start set**, or **End rest** on the session notification | stops | ends |
+| The same actions on the app's own screen | stops | ends |
+| **+1:00** | stops, and rings again when the extra minute is up | keeps running |
+| Swipe the alert away, or open the app | stops | keeps running |
+| Nothing at all | gives up after five minutes | keeps running |
+
+Silencing without ending the rest is deliberate: the clock carries on and the session
+notification still offers `End rest`, so nothing is lost but the noise.
+
+**If it only buzzes and never sounds**, the alarm stream is muted — press volume up while
+it is going, or `Settings > Sound > Alarm volume`. The app will not raise it for you; that
+is a system setting and changing it quietly is the kind of thing an app should not do.
+
+**The short ping before the alarm** is the notification channel's own sound. Android fixes a
+channel's sound when the channel is first created and an app cannot change it afterwards, so
+removing the ping would mean a new channel — which on HyperOS means redoing the lock-screen
+settings below. It is left in place, and silent mode drops it anyway.
 
 The alert names the set you are going back to — `Next: Squat · set 3 · 160 kg × 5` — and
 carries two buttons, so the phone still does not have to be unlocked:
