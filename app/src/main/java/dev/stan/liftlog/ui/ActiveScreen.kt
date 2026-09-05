@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Button
@@ -24,6 +25,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -39,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -59,6 +62,15 @@ fun ActiveScreen(onDone: () -> Unit) {
     val session by SessionManager.state.collectAsStateWithLifecycle()
     val now = rememberNow()
     val detail = rememberDetail(session.trainingId)
+
+    // The set just finished stays in hand right through RACKED and REST — endSet copies the
+    // state without touching currentSetId, and only beginSet reassigns it. That is what lets
+    // the rating be given during the rest that follows the set it describes.
+    val ratableSetId = session.currentSetId
+        .takeIf { it > 0 && (session.phase == Phase.RACKED || session.phase == Phase.REST) }
+    val ratedRpe = ratableSetId?.let { id ->
+        detail?.exercises?.firstNotNullOfOrNull { ex -> ex.sets.firstOrNull { it.id == id } }?.rpe
+    }
 
     var showAddExercise by remember { mutableStateOf(false) }
     var editingActuals by remember { mutableStateOf<SetEntry?>(null) }
@@ -111,7 +123,18 @@ fun ActiveScreen(onDone: () -> Unit) {
                     onAdvance = {
                         if (session.nothingToStart) confirmFinish = true
                         else SessionManager.advance(context)
+                    },
+                    rpe = ratedRpe,
+                    onRpe = ratableSetId?.let { id ->
+                        { value: Double? -> SessionManager.setRpe(context, id, value) }
                     }
+                )
+            }
+
+            item {
+                GripCard(
+                    gripKg = detail?.training?.gripKg,
+                    onSave = { SessionManager.setGrip(context, session.trainingId, it) }
                 )
             }
 
@@ -244,7 +267,10 @@ private fun PhaseCard(
     targetSeconds: Int,
     remaining: Int?,
     overrun: Int?,
-    onAdvance: () -> Unit
+    onAdvance: () -> Unit,
+    rpe: Double?,
+    /** Null outside the window where there is a finished set to rate. */
+    onRpe: ((Double?) -> Unit)?
 ) {
     val accent = when (phase) {
         Phase.SET -> MaterialTheme.colorScheme.primary
@@ -306,6 +332,10 @@ private fun PhaseCard(
                 )
             }
 
+            if (onRpe != null) {
+                RpeChips(rpe = rpe, onPick = onRpe)
+            }
+
             Button(
                 onClick = onAdvance,
                 modifier = Modifier.fillMaxWidth().height(68.dp).padding(top = 10.dp),
@@ -320,6 +350,131 @@ private fun PhaseCard(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
+            }
+        }
+    }
+}
+
+/** The nine half-steps of the scale, as one-tap chips. */
+private val rpeOptions = listOf(6.0, 6.5, 7.0, 7.5, 8.0, 8.5, 9.0, 9.5, 10.0)
+
+/**
+ * Rates the set just finished, without interrupting anything.
+ *
+ * Chips rather than a dialog on purpose: the rating is wanted on every working set, and a
+ * modal in the middle of the cycle would be four taps a set and would have no answer for the
+ * lock screen, which drives the same cycle with no UI at all. Here it sits inside the rest
+ * that follows the set — the one minute of the session with nothing else to do.
+ */
+@Composable
+private fun RpeChips(rpe: Double?, onPick: (Double?) -> Unit) {
+    // Keyed on the stored value so recording one collapses the strip, and a later change
+    // reopens it rather than leaving it permanently expanded.
+    var open by remember(rpe) { mutableStateOf(rpe == null) }
+
+    Column(
+        Modifier.fillMaxWidth().padding(top = 6.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        if (open) {
+            Text(
+                "Last set — how hard?",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            ChipRow(rpeOptions.map { formatWeight(it) }) { picked ->
+                onPick(rpeOptions.first { formatWeight(it) == picked })
+            }
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "RPE ${formatWeight(rpe ?: 0.0)}",
+                    style = NumberStyle,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                TextButton(onClick = { open = true }) { Text("change") }
+            }
+        }
+    }
+}
+
+/**
+ * The session's grip reading.
+ *
+ * Sits under the phase card rather than over it: the big button is what the screen is for, and
+ * a form above it would push it down the page for the whole session. Collapsed to a single
+ * line once the number is in.
+ */
+@Composable
+private fun GripCard(gripKg: Double?, onSave: (Double?) -> Unit) {
+    var editing by remember(gripKg) { mutableStateOf(gripKg == null) }
+    var text by remember(gripKg) { mutableStateOf(gripKg?.let { formatWeight(it) } ?: "") }
+
+    val parsed = text.replace(',', '.').toDoubleOrNull()
+    val blank = text.isBlank()
+    // Range checked here rather than in Repo: refusing a typo is the screen's job, whereas
+    // storing 150 when the lifter typed 555 would be inventing a measurement.
+    val plausible = parsed != null && parsed in 1.0..150.0
+
+    Card(
+        Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (!editing) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text("Grip ${formatWeight(gripKg ?: 0.0)} kg", style = NumberStyle)
+                        Text(
+                            "measured before lifting",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    TextButton(onClick = { editing = true }) { Text("Change") }
+                }
+            } else {
+                Text(
+                    "Pre-session readiness",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    label = { Text("Grip (kg) — before you lift") },
+                    singleLine = true,
+                    isError = !blank && !plausible,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    when {
+                        !blank && !plausible -> "That does not look like a grip reading — expected 1 to 150 kg."
+                        // Said out loud because the number means a different thing taken
+                        // afterwards, and a baseline mixing the two is worth nothing.
+                        else -> "Squeeze before your first warm-up, not after. Skip it and the " +
+                            "week simply has no reading."
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (!blank && !plausible) MaterialTheme.colorScheme.error
+                    else MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Row(Modifier.align(Alignment.End)) {
+                    if (gripKg != null) {
+                        TextButton(onClick = { onSave(null); editing = false }) {
+                            Text("Clear", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                    TextButton(
+                        onClick = { onSave(parsed); editing = false },
+                        enabled = plausible
+                    ) { Text("Save") }
+                }
             }
         }
     }

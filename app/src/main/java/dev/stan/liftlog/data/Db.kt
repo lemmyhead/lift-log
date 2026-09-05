@@ -8,7 +8,7 @@ import android.database.sqlite.SQLiteOpenHelper
 import kotlinx.coroutines.flow.MutableStateFlow
 
 private const val DB_NAME = "liftlog.db"
-private const val DB_VERSION = 3
+private const val DB_VERSION = 4
 
 class LiftDb(context: Context) : SQLiteOpenHelper(context.applicationContext, DB_NAME, null, DB_VERSION) {
 
@@ -23,7 +23,8 @@ class LiftDb(context: Context) : SQLiteOpenHelper(context.applicationContext, DB
               id          INTEGER PRIMARY KEY AUTOINCREMENT,
               started_at  INTEGER NOT NULL,
               ended_at    INTEGER,
-              notes       TEXT NOT NULL DEFAULT ''
+              notes       TEXT NOT NULL DEFAULT '',
+              grip_kg     REAL
             )
             """.trimIndent()
         )
@@ -87,6 +88,12 @@ class LiftDb(context: Context) : SQLiteOpenHelper(context.applicationContext, DB
                 """.trimIndent()
             )
         }
+        if (oldVersion < 4) {
+            // Nullable with no default on purpose. DEFAULT 0 would give every session already
+            // in the log a 0 kg grip reading, and those zeros would drag the chronic baseline
+            // down until the readiness percentage was meaningless. Never measured is NULL.
+            db.execSQL("ALTER TABLE training ADD COLUMN grip_kg REAL")
+        }
     }
 }
 
@@ -98,7 +105,10 @@ private fun Cursor.toTraining() = Training(
     id = getLong(0),
     startedAt = getLong(1),
     endedAt = longOrNull(2),
-    notes = getString(3) ?: ""
+    notes = getString(3) ?: "",
+    // Index 4 because the mapper is positional and ALTER TABLE can only append — putting the
+    // column anywhere else would silently shift ended_at and notes on every upgraded install.
+    gripKg = doubleOrNull(4)
 )
 
 private fun Cursor.toExercise() = Exercise(
@@ -126,7 +136,7 @@ private fun Cursor.toSet() = SetEntry(
     restSeconds = intOrNull(13)
 )
 
-private const val TRAINING_COLS = "id, started_at, ended_at, notes"
+private const val TRAINING_COLS = "id, started_at, ended_at, notes, grip_kg"
 private const val EXERCISE_COLS = "id, training_id, name, position, rest_target_seconds"
 private const val SET_COLS =
     "id, exercise_id, position, planned_reps, planned_weight, reps, weight, " +
@@ -182,6 +192,24 @@ object Repo {
 
     fun setNotes(id: Long, notes: String) = write {
         db.update("training", ContentValues().apply { put("notes", notes) }, "id = ?", arrayOf(id.toString()))
+    }
+
+    /**
+     * The session's grip-strength reading in kg; null clears it.
+     *
+     * Zero, negative and non-finite values are stored as NULL rather than rejected. A zero is
+     * not a measurement, and it would poison every rolling average it entered; a NaN would
+     * propagate through the whole four-week window and print "NaN" into the export. Guarding
+     * at the one write point beats guarding at every read.
+     *
+     * An implausibly large reading is *not* clamped here — 555 kg is the UI's problem to
+     * refuse, because storing 150 when the lifter typed 555 would be inventing data.
+     */
+    fun setGrip(trainingId: Long, kg: Double?) = write {
+        val v = kg?.takeIf { it.isFinite() && it > 0.0 }
+        db.update("training", ContentValues().apply {
+            if (v == null) putNull("grip_kg") else put("grip_kg", v)
+        }, "id = ?", arrayOf(trainingId.toString()))
     }
 
     fun deleteTraining(id: Long) = write {
@@ -332,6 +360,19 @@ object Repo {
         db.update("set_entry", ContentValues().apply {
             put("reps", reps)
             put("weight", weight)
+            if (rpe == null) putNull("rpe") else put("rpe", rpe)
+        }, "id = ?", arrayOf(id.toString()))
+    }
+
+    /**
+     * How hard the set felt, on its own.
+     *
+     * Separate from [updateSet] because the rating is given from the phase card during rest,
+     * where reps and weight are not in hand — and re-stating them there would mean reading the
+     * row back just to write it out unchanged.
+     */
+    fun setRpe(id: Long, rpe: Double?) = write {
+        db.update("set_entry", ContentValues().apply {
             if (rpe == null) putNull("rpe") else put("rpe", rpe)
         }, "id = ?", arrayOf(id.toString()))
     }

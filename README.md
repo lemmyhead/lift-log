@@ -104,23 +104,78 @@ training  →  exercise  →  set  →  reps
 
 Each set stores what was planned and what was done: weight, reps, RPE (optional), the kind
 of set, its rest target, how long the set took, and the rest that followed it. Each session
-records its total duration.
+records its total duration and, if you took one, a pre-session grip reading.
+
+## Fatigue management
+
+Volume tells you what you did. It does not tell you whether you are absorbing it. Three
+numbers do, and the **heart icon** in the top right is where they live.
+
+| | What it asks | Where it should sit |
+|---|---|---|
+| **Load ratio** | Is this week's tonnage out of step with the last four? | 0.80–1.30. Past 1.50 is where the risk climbs |
+| **Chronic RPE** | Is the same work starting to feel harder? | This week within about half a point of the four-week baseline |
+| **Grip readiness** | Is your nervous system firing like it was? | Around 100%. At or below 95% is systemic fatigue, not a bad day |
+
+All three compare the current week against a rolling four-week average that includes it, so
+they need about a month of logging before they mean anything. Until then the screen says so
+rather than showing you a number that is really the week being compared with itself.
+
+**What you have to record.** Volume is counted for you. The other two are manual:
+
+- **RPE** — after you rack a set, a row of chips appears on the phase card while you rest.
+  One tap, no dialog, and nothing waits on it. Any set you rate counts toward the week.
+- **Grip** — one squeeze on a dynamometer *before your first warm-up*, typed into the card
+  under the phase card. Taken afterwards it measures how much the session took out of you,
+  which is a different quantity; a baseline mixing the two is worth nothing. Skip it and the
+  week simply has no reading — nothing is invented to fill the gap.
+
+A week you did not train shows as a rest week, and its zero volume counts: not training is
+detraining, and the ratio exists precisely to catch the week you come back.
+
+**Two things it cannot see.** Volume is `reps × weight`, so bodyweight work at zero weight
+adds nothing — a week of chin-ups reads here as a rest week and inflates the following
+week's ratio. And the weekly RPE is weighted by how many sets you rated, so a twenty-set
+session outweighs a five-set one.
+
+Nothing here notifies you. It is a screen you open.
 
 ## Export
 
-**Export CSV** (share icon, top right) writes one row per completed set — 18 columns of
-exactly what you logged, with nothing computed or inferred:
+**Export CSV** (share icon, top right) sends **two** files through Android's share sheet.
+
+`liftlog-export.csv` — one row per completed set. The first eighteen columns are exactly
+what you logged, with nothing computed or inferred; the last six carry the week that session
+fell in, so the flat file pivots without a join:
 
 ```
 session_id, session_start, session_end, session_duration_s,
 exercise_order, exercise, set_number, label,
 planned_reps, planned_weight_kg, reps, weight_kg,
-rpe, volume_kg, rest_target_s, work_s, rest_s, completed_at
+rpe, volume_kg, rest_target_s, work_s, rest_s, completed_at,
+week_number, session_grip_kg,
+weekly_volume_kg, acwr, chronic_rpe_4wk, grip_readiness_pct
 ```
 
+`liftlog-fatigue.csv` — one row per calendar week, weeks you did not train included:
+
+```
+week_number, weekly_volume_kg, chronic_volume_4wk_kg, acwr,
+avg_rpe, chronic_rpe_4wk,
+avg_grip_strength_kg, chronic_grip_4wk_kg, grip_readiness_pct
+```
+
+Both files are built from one pass over the log, so `week_number` means the same thing in
+each, and the sum of a week's `volume_kg` cells equals its `weekly_volume_kg`. That is the
+one check you can run on the export against itself.
+
+A blank cell means *not measured* — never a zero standing in for one, so a spreadsheet
+average skips it instead of being dragged down by it. Numbers are always written with a dot,
+whatever your phone's locale is set to.
+
 Both the plan and the performance are there, so a set that did not go as written is visible
-rather than averaged away. The file goes out through Android's share sheet — Drive, email,
-or straight into a spreadsheet.
+rather than averaged away. Some share targets only accept one attachment at a time and will
+not appear in the chooser; Drive and Gmail take both.
 
 ## Install
 

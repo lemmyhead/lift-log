@@ -368,6 +368,23 @@ object SessionManager {
         refreshCurrentSet(context)
     }
 
+    /**
+     * How hard a set felt, rated from the phase card while resting.
+     *
+     * Deliberately not part of the set cycle: [advance] is driven from the lock screen too,
+     * where there is nothing to ask with, so a rating that gated the cycle would either block
+     * the notification path or diverge from it.
+     */
+    fun setRpe(context: Context, setId: Long, rpe: Double?) = scope.launch {
+        Repo.setRpe(setId, rpe)
+        refreshCurrentSet(context)
+    }
+
+    /** The session's pre-lift grip reading. Session-level, so it needs no set in hand. */
+    fun setGrip(context: Context, trainingId: Long, kg: Double?) = scope.launch {
+        Repo.setGrip(trainingId, kg)
+    }
+
     fun updateSetActuals(context: Context, setId: Long, reps: Int, weight: Double, rpe: Double?) =
         scope.launch {
             Repo.updateSet(setId, reps, weight, rpe)

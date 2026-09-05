@@ -183,7 +183,9 @@ fun EditSetDialog(
                 OutlinedTextField(
                     value = rpe,
                     onValueChange = { rpe = it },
-                    label = { Text("RPE (optional)") },
+                    label = { Text("RPE 1–10 (optional)") },
+                    isError = rpe.isNotBlank() &&
+                        rpe.replace(',', '.').toDoubleOrNull()?.let { it !in 1.0..10.0 } != false,
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth()
@@ -198,7 +200,9 @@ fun EditSetDialog(
                 onSave(
                     reps.toIntOrNull() ?: set.reps,
                     weight.replace(',', '.').toDoubleOrNull() ?: set.weight,
-                    rpe.replace(',', '.').toDoubleOrNull()
+                    // Off-scale means a typo — a 75 meant as 7.5 would otherwise sit in the
+                    // log and drag a whole week's average RPE past the deload threshold.
+                    rpe.replace(',', '.').toDoubleOrNull()?.takeIf { it in 1.0..10.0 }
                 )
             }) { Text("Save") }
         },
