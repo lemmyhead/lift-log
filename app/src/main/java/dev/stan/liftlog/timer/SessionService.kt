@@ -79,13 +79,7 @@ class SessionService : LifecycleService() {
                             // Also where the ring's own timeout is checked — this loop runs
                             // for exactly the phases the alarm can be ringing in.
                             RestRinger.sync(this@SessionService, state)
-                            // Re-posting collapses an inline reply the user has open, so the
-                            // RPE prompt is left alone until it's answered — its own numbers
-                            // aren't moving anyway, unlike the rest clock the rest of this
-                            // loop exists to keep current.
-                            if (!awaitingRpe(state)) {
-                                notifications.notify(NOTIFICATION_ID, buildNotification(state))
-                            }
+                            notifications.notify(NOTIFICATION_ID, buildNotification(state))
                         }
                     }
                 }
@@ -173,10 +167,6 @@ class SessionService : LifecycleService() {
         )
     }
 
-    /** Racked with nothing rated yet: the notification is showing the RPE prompt in place of "Start rest". */
-    private fun awaitingRpe(state: SessionState): Boolean =
-        state.phase == Phase.RACKED && Repo.set(state.currentSetId)?.rpe == null
-
     private fun buildNotification(state: SessionState): Notification {
         val openApp = PendingIntent.getActivity(
             this, 0,
@@ -210,19 +200,15 @@ class SessionService : LifecycleService() {
             // asks for one in place of "Start rest" — answering it is what brings "Start
             // rest" back.
             .apply {
-                if (awaitingRpe(state)) {
+                val awaitingRpe = state.phase == Phase.RACKED &&
+                    Repo.set(state.currentSetId)?.rpe == null
+                if (awaitingRpe) {
                     val remoteInput = RemoteInput.Builder(KEY_RPE_INPUT)
                         .setLabel("RPE 1–10")
                         .build()
                     val rpeAction = NotificationCompat.Action.Builder(
                         0, "Log RPE", pending(ACTION_SAVE_RPE, 3, mutable = true)
-                    )
-                        .addRemoteInput(remoteInput)
-                        // Platform default requires unlocking before typing into a
-                        // RemoteInput from the lock screen — the whole point here is
-                        // rating a set without touching the lock screen at all.
-                        .setAuthenticationRequired(false)
-                        .build()
+                    ).addRemoteInput(remoteInput).build()
                     addAction(rpeAction)
                 } else if (!state.nothingToStart) {
                     addAction(0, state.actionLabel, pending(ACTION_TOGGLE, 1))
