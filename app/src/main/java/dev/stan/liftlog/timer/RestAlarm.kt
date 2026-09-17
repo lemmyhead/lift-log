@@ -187,11 +187,9 @@ object RestAlarm {
             // and the ongoing notification still carries "End rest".
             .setDeleteIntent(action(context, SessionService.ACTION_SILENCE, 6))
             // Nothing left to go back under the bar for, so neither button it would
-            // normally carry means anything: the only honest offer is to close the session.
+            // normally carry means anything, and ending training is done from the app.
             .apply {
-                if (planComplete) {
-                    addAction(0, "End training", action(context, SessionService.ACTION_END, 5))
-                } else {
+                if (!planComplete) {
                     addAction(0, "Start set", action(context, SessionService.ACTION_START_SET, 3))
                     addAction(0, "+1:00", action(context, SessionService.ACTION_EXTEND_REST, 4))
                 }
