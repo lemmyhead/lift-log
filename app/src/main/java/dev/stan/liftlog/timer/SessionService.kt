@@ -10,13 +10,11 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import androidx.core.app.RemoteInput
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import dev.stan.liftlog.MainActivity
 import dev.stan.liftlog.R
-import dev.stan.liftlog.data.Repo
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -36,13 +34,11 @@ class SessionService : LifecycleService() {
 
     companion object {
         const val ACTION_TOGGLE = "dev.stan.liftlog.TOGGLE"
+        const val ACTION_END = "dev.stan.liftlog.END"
         const val ACTION_START_SET = "dev.stan.liftlog.START_SET"
         const val ACTION_EXTEND_REST = "dev.stan.liftlog.EXTEND_REST"
         /** Dismissing the alert: stop the noise, leave the rest running. */
         const val ACTION_SILENCE = "dev.stan.liftlog.SILENCE"
-        /** Fired when the RPE typed into the notification's inline reply field is submitted. */
-        const val ACTION_SAVE_RPE = "dev.stan.liftlog.SAVE_RPE"
-        private const val KEY_RPE_INPUT = "rpe_input"
         private const val CHANNEL_ID = "session"
         private const val NOTIFICATION_ID = 1001
     }
@@ -104,17 +100,10 @@ class SessionService : LifecycleService() {
 
         when (intent?.action) {
             ACTION_TOGGLE -> SessionManager.advance(this)
+            ACTION_END -> SessionManager.endTraining(this)
             ACTION_START_SET -> SessionManager.startNextSet(this)
             ACTION_EXTEND_REST -> SessionManager.extendRest(this)
             ACTION_SILENCE -> RestRinger.silence(this)
-            ACTION_SAVE_RPE -> {
-                val text = RemoteInput.getResultsFromIntent(intent)
-                    ?.getCharSequence(KEY_RPE_INPUT)?.toString().orEmpty()
-                // Off-scale means a typo, same tolerance as the in-app RPE field: dropped
-                // rather than saved, so the prompt just stays up for another try.
-                text.replace(',', '.').toDoubleOrNull()?.takeIf { it in 1.0..10.0 }
-                    ?.let { SessionManager.setRpe(this, state.currentSetId, it) }
-            }
         }
         // The session is persisted, so a system restart of this service has nothing to
         // add; MainActivity revives the notification instead.
@@ -156,14 +145,11 @@ class SessionService : LifecycleService() {
         notifications.createNotificationChannel(channel)
     }
 
-    private fun pending(action: String, requestCode: Int, mutable: Boolean = false): PendingIntent {
+    private fun pending(action: String, requestCode: Int): PendingIntent {
         val intent = Intent(this, SessionService::class.java).setAction(action)
-        // RemoteInput needs a mutable PendingIntent to attach the typed text to (enforced
-        // since Android 12); every other action stays immutable as before.
-        val mutabilityFlag = if (mutable) PendingIntent.FLAG_MUTABLE else PendingIntent.FLAG_IMMUTABLE
         return PendingIntent.getService(
             this, requestCode, intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or mutabilityFlag
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
     }
 
@@ -196,24 +182,11 @@ class SessionService : LifecycleService() {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setContentIntent(openApp)
             // A finished plan has nothing to start, so the button that would start it is
-            // dropped rather than left to do nothing. A just-racked set with no RPE yet
-            // asks for one in place of "Start rest" — answering it is what brings "Start
-            // rest" back.
+            // dropped rather than left to do nothing.
             .apply {
-                val awaitingRpe = state.phase == Phase.RACKED &&
-                    Repo.set(state.currentSetId)?.rpe == null
-                if (awaitingRpe) {
-                    val remoteInput = RemoteInput.Builder(KEY_RPE_INPUT)
-                        .setLabel("RPE 1–10")
-                        .build()
-                    val rpeAction = NotificationCompat.Action.Builder(
-                        0, "Log RPE", pending(ACTION_SAVE_RPE, 3, mutable = true)
-                    ).addRemoteInput(remoteInput).build()
-                    addAction(rpeAction)
-                } else if (!state.nothingToStart) {
-                    addAction(0, state.actionLabel, pending(ACTION_TOGGLE, 1))
-                }
+                if (!state.nothingToStart) addAction(0, state.actionLabel, pending(ACTION_TOGGLE, 1))
             }
+            .addAction(0, "End training", pending(ACTION_END, 2))
             .build()
     }
 }
